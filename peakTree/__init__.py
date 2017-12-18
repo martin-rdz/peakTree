@@ -10,11 +10,13 @@ import matplotlib
 matplotlib.use('Agg')
 
 import datetime
+import ast
+import subprocess
 import netCDF4
 import numpy as np
 import matplotlib.pyplot as plt
-
-import peakTree.helpers as h
+from . import helpers as h
+from . import print_tree
 
 def detect_peak_simple(array, lthres):
     """
@@ -31,6 +33,10 @@ def detect_peak_simple(array, lthres):
 
 #@profile
 def get_minima(array):
+    """
+    get the minima of an array by calculating the derivative
+    returns [(index, value at index), ... ]
+    """
     #sdiff = np.ma.diff(np.sign(np.ma.diff(array)))
     sdiff = np.diff(np.sign(np.diff(array)))
     rising_1 = (sdiff == 2)
@@ -73,12 +79,18 @@ class Node():
 
 #@profile
 def traverse(Node, coords):
+    """traverse a node and recursively all subnodes"""
     yield {'coords': coords, 'bounds': Node.bounds, 'thres': Node.threshold}
     for i, n in enumerate(Node.children):
         yield from traverse(n, coords + [i])
 
 #@profile
 def coords_to_id(traversed):
+    """
+    calculate the id in level-order from the coordinates
+    input: traversed tree (list?)
+    returns: traversed tree (dict)
+    """
     traversed_id = {}   
     level_no = 0
     while True:
@@ -94,6 +106,7 @@ def coords_to_id(traversed):
     return traversed_id
 
 def moment(x, Z):
+    """mean, rms, skew for a vel, Z part of the spectrum"""
     mean = np.sum(x*Z)/np.sum(Z)
     rms = np.sqrt(np.sum(((x-mean)**2)*Z)/np.sum(Z))
     skew = np.sum(((x-mean)**3)*Z)/(np.sum(Z)*(rms**3))
@@ -108,6 +121,7 @@ def calc_moments(spectrum, bounds, thres):
     # TODO add the masked pocessing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
+    masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
     moments = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
     
     #spectrum['specZco'] = spectrum['specZ']/(1+spectrum['specLDR'])
@@ -124,20 +138,30 @@ def calc_moments(spectrum, bounds, thres):
                                 spectrum['specSNRco_mask'][bounds[0]:bounds[1]+1][ind_max])
 
     #print('ldrmax ', ldrmax, 'ldrmax_mask ', ldrmax_mask)
-    moments['ldrmax'] = ldrmax if not isinstance(ldrmax, np.ma.core.MaskedConstant) else spectrum['minSNRcx']/spectrum['specSNRco'][bounds[0]:bounds[1]+1][ind_max]
+    moments['ldrmax'] = ldrmax if not ldrmax_mask else spectrum['minSNRcx']/spectrum['specSNRco'][bounds[0]:bounds[1]+1][ind_max]
 
+    prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
+    prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
+    moments['prominence'] = prominence if not prominence_mask else 1e-99
     #assert np.all(validSNRco.mask == validSNRcx.mask)
     #print('SNRco', h.lin2z(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
     #print('SNRcx', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]))
     #print('LDR', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]/spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
     moments['z'] = Z
     # removed the np.ma. 
-    ldr = (np.sum(spectrum['validSNRcx'][bounds[0]:bounds[1]+1])/
-        np.sum(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
-    moments['ldr'] = ldr if not isinstance(ldr, np.ma.core.MaskedConstant) else 1e-9
+    #ldr = (np.sum(spectrum['validSNRcx'][bounds[0]:bounds[1]+1])/
+    #    np.sum(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
+    # ldr as mean not sum
+    ldr_array = spectrum['specLDRmasked'][bounds[0]:bounds[1]+1]
+    ldr_array = ldr_array[np.isfinite(ldr_array)]
+    #print('ldr ', bounds,  spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+    #print('filtered ', ldr_array)
+    ldr = np.mean(ldr_array)
+    ldr_mask = np.all(spectrum['specLDRmasked_mask'][bounds[0]:bounds[1]+1])
+    moments['ldr'] = ldr if not ldr_mask else np.nan
 
-    moments['minv'] = spectrum['vel'][bounds[0]]
-    moments['maxv'] = spectrum['vel'][bounds[1]]
+    #moments['minv'] = spectrum['vel'][bounds[0]]
+    #moments['maxv'] = spectrum['vel'][bounds[1]]
 
     return moments, spectrum
 
@@ -146,19 +170,18 @@ class peakTree():
     -peak detection, tree generation
     -tree compression
     -product generation (payload: Z, v, width, LDR, skew, minv, maxv)
+    - drop minv maxv in favour of boundaries
     """
 
     #@profile
-    def get_from_spectrum(self, spectrum):
+    def get_from_spectrum(self, spectrum, smooth):
         """
 
         spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
             'specZ': specZ, 'noise_thres': specZ.min()}
         """
-        smooth = True
-        smooth = False
         if smooth:
-            print('smoothed spectrum')
+            #print('smoothed spectrum')
             spectrum['specZ'] = np.convolve(spectrum['specZ'], np.array([0.5,1,0.5])/2.0, mode='same')
 
 
@@ -189,9 +212,9 @@ class peakTree():
         return traversed
 
 
-
-def saveVar(dataset, varData):
+def saveVar(dataset, varData, dtype=np.float32):
     """
+    save a single variable to a dataset
     * var_name (Z)
     * dimension ( ('time', 'height') )
     * arr (self.corr_refl_reg[:].filled())
@@ -204,7 +227,7 @@ def saveVar(dataset, varData):
     * plot_scale ("linear")
     """
 
-    item = dataset.createVariable(varData['var_name'], np.float32, varData['dimension'])
+    item = dataset.createVariable(varData['var_name'], dtype, varData['dimension'])
     item[:] = varData['arr']
     item.long_name = varData['long_name']
     if 'comment' in varData.keys():
@@ -220,7 +243,11 @@ def saveVar(dataset, varData):
     if 'plot_scale' in varData.keys():
         item.plot_scale = varData['plot_scale']
     if 'axis' in varData.keys():
-        item.axis = varData['axis']    
+        item.axis = varData['axis']
+
+def get_git_hash():
+    label = subprocess.check_output(['git', 'describe', '--always'])
+    return label.rstrip()
 
 
 class peakTreeBuffer():
@@ -229,6 +256,14 @@ class peakTreeBuffer():
     -(time, height, node)
 
     """
+    def __init__(self):
+        self.settings = {'decoupling': 30,
+                         'smooth': True,
+                         'max_no_nodes': 15,
+                         'thres_factor_co': 3.0,
+                         'thres_factor_cx': 3.0}
+        self.location = 'Limassol'
+
     def load_spec_file(self, filename):
         """load spectra raw file"""
         self.type = 'spec'
@@ -259,7 +294,14 @@ class peakTreeBuffer():
 
     #@profile
     def get_tree_at(self, sel_ts, sel_range, silent=False):
-        """ """
+        """
+        get the tree at specified time
+
+        either from the spectrum directly (prior call of load_spec_file())
+        or from the pre-converted file (prior call of load_peakTree_file())
+
+        returns a dictionary with all nodes and the parameters of each node
+        """
         it = np.where(self.timestamps == min(self.timestamps, key=lambda t: abs(sel_ts - t)))[0]
         ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0]
         print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], 'height', ir, self.range[ir]) if not silent else None
@@ -267,7 +309,7 @@ class peakTreeBuffer():
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
 
         if self.type == 'spec':
-            decoupling = 27
+            decoupling = self.settings['decoupling']
 
             # why is ravel necessary here?
             # flatten seems to faster
@@ -300,44 +342,49 @@ class peakTreeBuffer():
                 spectrum['minSNRcx'] = 1e-99
             else:
                 spectrum['minSNRcx'] = spectrum['specSNRcx'][~spectrum['specSNRcx_mask']].min()
-            thresSNRcx = spectrum['minSNRcx']*h.z2lin(2.5)
+            thresSNRcx = spectrum['minSNRcx']*h.z2lin(self.settings['thres_factor_cx'])
             if np.all(spectrum['specSNRcx_mask']):
                 minSNRco = 1e-99
                 thresSNRco = 1e-99
-                maxSNRco = 1e-99
+                thresdecoup = 1e-99
+                # maxSNRco = 1e-99
             else:
                 minSNRco = spectrum['specSNRco'][~spectrum['specSNRco_mask']].min()
-                thresSNRco = minSNRco*h.z2lin(2.5)
-                maxSNRco = minSNRco*h.z2lin(decoupling)
+                thresSNRco = minSNRco*h.z2lin(self.settings['thres_factor_co'])
+                thresdecoup = h.z2lin(h.lin2z(spectrum['specSNRco'])-decoupling+2)
+                # maxSNRco = minSNRco*h.z2lin(decoupling)
 
-            #validSNRco = np.ma.masked_where((spectrum['specSNRco'] < thresSNRco), spectrum['specSNRco'])
             spectrum['validSNRco_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specSNRco'] < thresSNRco)
-
-            #validSNRcx = np.ma.masked_where((spectrum['specSNRcx'] < thresSNRcx), spectrum['specSNRcx'])
             spectrum['validSNRcx_mask'] = np.logical_or(spectrum['specSNRcx_mask'], 
                                                         h.fill_with(spectrum['specSNRcx'], spectrum['specSNRcx_mask'], 1e-30) < thresSNRcx)
-            #validSNRcx = np.ma.masked_where((spectrum['specSNRco'] > maxSNRco), validSNRcx)
             spectrum['validSNRcx_mask'] = np.logical_or(spectrum['validSNRcx_mask'], 
-                                                        h.fill_with(spectrum['specSNRco'], spectrum['specSNRco_mask'], 1e-30) > maxSNRco)
-            #validSNRco = np.ma.masked_where(validSNRcx.mask, validSNRco)
+                                                        h.fill_with(spectrum['specSNRcx'], spectrum['specSNRcx_mask'], 1e-30) < thresdecoup)
             spectrum['validSNRco_mask'] = np.logical_or(spectrum['validSNRcx_mask'], spectrum['validSNRco_mask'])
             
             spectrum['validSNRcx'] = spectrum['specSNRcx'].copy()
-            spectrum['validSNRcx'][spectrum['validSNRcx_mask']] = 1e-30
+            spectrum['validSNRcx'][spectrum['validSNRcx_mask']] = 0
             spectrum['validSNRco'] = spectrum['specSNRco'].copy()
-            spectrum['validSNRco'][spectrum['validSNRco_mask']] = 1e-30
+            spectrum['validSNRco'][spectrum['validSNRco_mask']] = 1
             
             spectrum['specLDRmasked'] = spectrum['validSNRcx']/spectrum['validSNRco']
             spectrum['specLDRmasked_mask'] = np.logical_or(spectrum['validSNRcx_mask'], spectrum['validSNRco_mask'])
+            spectrum['specLDRmasked'][spectrum['specLDRmasked_mask']] = np.nan
 
-            trav_tree = peakTree().get_from_spectrum(spectrum)
+            spectrum['decoupling'] = decoupling
+            trav_tree = peakTree().get_from_spectrum(spectrum, self.settings['smooth'])
+
+            return trav_tree, spectrum
 
         elif self.type == 'peakTree':
+            settings_file = ast.literal_eval(self.f.settings)
+            self.settings['max_no_nodes'] = settings_file['max_no_nodes']
             print('load tree from peakTree; no_nodes ', self.no_nodes[it,ir])
             trav_tree = {}            
             print('peakTree parent', self.f.variables['parent'][it,ir,:])
-            for k in range(int(self.no_nodes[it, ir])):
-                print('k', k)
+
+            avail_nodes = min(self.settings['max_no_nodes'], int(self.no_nodes[it, ir]))
+            for k in range(avail_nodes):
+                #print('k', k)
                 #(['timestamp', 'range', 'Z', 'v', 'width', 'LDR', 'skew', 'minv', 'maxv', 'threshold', 'parent', 'no_nodes']
                 node = {'parent_id': int(np.asscalar(self.f.variables['parent'][it,ir,k])), 
                         'thres': h.z2lin(np.asscalar(self.f.variables['threshold'][it,ir,k])), 
@@ -345,43 +392,47 @@ class peakTreeBuffer():
                         'width': np.asscalar(self.f.variables['width'][it,ir,k]), 
                         #'bounds': self.f.variables[''][it,ir], 
                         'z': h.z2lin(np.asscalar(self.f.variables['Z'][it,ir,k])), 
-                        'minv': np.asscalar(self.f.variables['minv'][it,ir,k]), 
-                        'maxv': np.asscalar(self.f.variables['maxv'][it,ir,k]), 
+                        'bounds': (np.asscalar(self.f.variables['bound_l'][it,ir,k]), np.asscalar(self.f.variables['bound_r'][it,ir,k])),
                         #'coords': [0], 
                         'skew': np.asscalar(self.f.variables['skew'][it,ir,k]), 
+                        'ldrmax': h.z2lin(np.asscalar(self.f.variables['ldrmax'][it,ir,k])),
+                        'prominence': h.z2lin(np.asscalar(self.f.variables['prominence'][it,ir,k])),
                         'v': np.asscalar(self.f.variables['v'][it,ir,k])}
                 if k == 0:
                     node['coords'] = [0]
                 else:
                     coords = trav_tree[node['parent_id']]['coords']
                     siblings = list(filter(lambda d: d['coords'][:-1] == coords, trav_tree.values()))
-                    print('parent_id', node['parent_id'], 'siblings ', siblings)
+                    #print('parent_id', node['parent_id'], 'siblings ', siblings)
                     node['coords'] = coords + [len(siblings)]
                 trav_tree[k] = node
       
-        return trav_tree
+            return trav_tree, None
 
     #@profile
     def assemble_time_height(self, outdir):
-
+        """ convert a whole spectra file to the peakTree node file"""
         #self.timestamps = self.timestamps[:10]
-        max_no_nodes=15
+
+        max_no_nodes=self.settings['max_no_nodes']
         Z = np.zeros((self.timestamps.shape[0], self.range.shape[0], max_no_nodes))
         Z[:] = -999
         v = Z.copy()
         width = Z.copy()
         LDR = Z.copy()
         skew = Z.copy()
-        minv = Z.copy()
-        maxv = Z.copy()
+        bound_l = Z.copy()
+        bound_r = Z.copy()
         parent = Z.copy()
         thres = Z.copy()
+        ldrmax = Z.copy()
+        prominence = Z.copy()
         no_nodes = np.zeros((self.timestamps.shape[0], self.range.shape[0]))
 
         for it, ts in enumerate(self.timestamps[:]):
             print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it])
             for ir, rg in enumerate(self.range[:]):
-                trav_tree = self.get_tree_at(ts, rg, silent=True)
+                trav_tree, _ = self.get_tree_at(ts, rg, silent=True)
 
                 no_nodes[it,ir] = len(list(trav_tree.keys()))
 
@@ -394,10 +445,12 @@ class peakTreeBuffer():
                     width[it,ir,k] = val['width']
                     LDR[it,ir,k] = h.lin2z(val['ldr'])
                     skew[it,ir,k] = val['skew']
-                    minv[it,ir,k] = val['minv']
-                    maxv[it,ir,k] = val['maxv']
+                    bound_l[it,ir,k] = val['bounds'][0]
+                    bound_r[it,ir,k] = val['bounds'][1]
                     parent[it,ir,k] = val['parent_id']
                     thres[it,ir,k] = h.lin2z(val['thres'])
+                    ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
+                    prominence[it,ir,k] = h.lin2z(val['prominence'])
 
         filename = outdir + '{}_peakTree.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'))
         print('output filename ', filename)
@@ -406,6 +459,8 @@ class peakTreeBuffer():
             dim_time = dataset.createDimension('time', Z.shape[0])
             dim_range = dataset.createDimension('range', Z.shape[1])
             dim_nodes = dataset.createDimension('nodes', Z.shape[2])
+            dim_nodes = dataset.createDimension('vel', self.velocity.shape[0])
+            dataset.createDimension('mode', 1)
 
             times = dataset.createVariable('timestamp', np.int32, ('time',))
             times[:] = self.timestamps.astype(np.int32)
@@ -415,6 +470,13 @@ class peakTreeBuffer():
             rg[:] = self.range.astype(np.float32)
             rg.long_name = 'range [m]'
 
+            vel = dataset.createVariable('velocity', np.float32, ('vel',))
+            vel[:] = self.velocity.astype(np.float32)
+            vel.long_name = 'velocity [m/s]'
+
+            saveVar(dataset, {'var_name': 'decoupling', 'dimension': ('mode'),
+                             'arr':  self.settings['decoupling'], 'long_name': "LDR decoupling",
+                             'units': "dB", 'missing_value': -999.})
             saveVar(dataset, {'var_name': 'Z', 'dimension': ('time', 'range', 'nodes'),
                               'arr': Z[:], 'long_name': "Reflectivity factor",
                               #'comment': "",
@@ -440,16 +502,14 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': '', 'missing_value': -999., 'plot_range': (-2., 2.),
                               'plot_scale': "linear"})
-            saveVar(dataset, {'var_name': 'minv', 'dimension': ('time', 'range', 'nodes'),
-                              'arr': minv[:], 'long_name': "Left edge of peak",
-                              #'comment': "",
-                              'units': "m s-1", 'missing_value': -999., 'plot_range': (-8., 8.),
-                              'plot_scale': "linear"})
-            saveVar(dataset, {'var_name': 'maxv', 'dimension': ('time', 'range', 'nodes'),
-                              'arr': maxv[:], 'long_name': "Right edge of peak",
-                              #'comment': "",
-                              'units': "m s-1", 'missing_value': -999., 'plot_range': (-8., 8.),
-                              'plot_scale': "linear"})
+            saveVar(dataset, {'var_name': 'bound_l', 'dimension': ('time', 'range', 'nodes'),
+                              'arr': bound_l[:].astype(np.int32), 'long_name': "Left bound of peak", #'comment': "",
+                              'units': "bin", 'missing_value': -999., 'plot_range': (0, self.velocity.shape[0]),
+                              'plot_scale': "linear"}, dtype=np.int32)
+            saveVar(dataset, {'var_name': 'bound_r', 'dimension': ('time', 'range', 'nodes'),
+                              'arr': bound_r[:].astype(np.int32), 'long_name': "Right bound of peak", #'comment': "",
+                              'units': "bin", 'missing_value': -999., 'plot_range': (0, self.velocity.shape[0]),
+                              'plot_scale': "linear"}, dtype=np.int32)
             saveVar(dataset, {'var_name': 'threshold', 'dimension': ('time', 'range', 'nodes'),
                               'arr': thres[:], 'long_name': "Subpeak Threshold",
                               #'comment': "",
@@ -460,18 +520,31 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
+            saveVar(dataset, {'var_name': 'ldrmax', 'dimension': ('time', 'range', 'nodes'),
+                              'arr': ldrmax[:], 'long_name': "Maximum LDR from SNR",
+                              #'comment': "",
+                              'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                              'plot_scale': "linear"})
+            saveVar(dataset, {'var_name': 'prominence', 'dimension': ('time', 'range', 'nodes'),
+                              'arr': prominence[:], 'long_name': "Prominence of Peak above threshold",
+                              #'comment': "",
+                              'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                              'plot_scale': "linear"})
+            
             saveVar(dataset, {'var_name': 'no_nodes', 'dimension': ('time', 'range'),
                               'arr': no_nodes[:], 'long_name': "Number of detected nodes",
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
+            
 
             dataset.description = 'peakTree processing'
-            dataset.location = 'Limassol'
+            dataset.location = self.location
             dataset.institution = 'TROPOS'
             dataset.contact = 'buehl@tropos.de or radenz@tropos.de'
             dataset.creation_time = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-            dataset.commit_id = ''
+            dataset.settings = str(self.settings)
+            dataset.commit_id = get_git_hash()
             dataset.day = str(self.begin_dt.day)
             dataset.month = str(self.begin_dt.month)
             dataset.year = str(self.begin_dt.year)
@@ -504,13 +577,13 @@ if __name__ == "__main__":
 
     pTB = peakTreeBuffer()
     pTB.load_spec_file('../data/D20170311_T2000_2100_Lim_zspc2nc_v1_02_standard.nc4')
-    tree_spec = pTB.get_tree_at(ts, rg)
+    tree_spec, _ = pTB.get_tree_at(ts, rg)
     
     print('del and load new')
     del pTB
     pTB = peakTreeBuffer()
     pTB.load_peakTree_file('../output/20170311_2000_peakTree.nc4')
-    tree_file = pTB.get_tree_at(ts, rg)
+    tree_file, _ = pTB.get_tree_at(ts, rg)
 
     print(list(map(lambda elem: (elem[0], elem[1]['coords']), tree_spec.items())))
     print(list(map(lambda elem: (elem[0], elem[1]['coords']), tree_file.items())))
