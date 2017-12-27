@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from . import helpers as h
 from . import print_tree
 
+#@profile
 def detect_peak_simple(array, lthres):
     """
     detect noise separated peaks
@@ -49,16 +50,24 @@ def get_minima(array):
 
 
 class Node():
-    def __init__(self, bounds, noise_thres, root=False, parent_lvl=0):
+    def __init__(self, bounds, spec_chunk, noise_thres, root=False, parent_lvl=0):
         self.bounds = bounds
         self.children = []
         self.level = 0 if root else parent_lvl + 1
         self.root = root
         self.threshold = noise_thres
+        self.spec = spec_chunk
+        self.prom_filter = 1.
+        #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
-    def add_noise_sep(self, list_of_bounds, thres):
-        for bound in list_of_bounds:
-            self.children.append(Node(bound, thres, parent_lvl=self.level))
+    def add_noise_sep(self, list_of_bounds, spec, thres):
+        for bounds in list_of_bounds:
+            spec_chunk = spec[bounds[0]:bounds[1]+1]
+            prom = spec_chunk[spec_chunk.argmax()]/thres
+            if h.lin2z(prom) > self.prom_filter:
+                self.children.append(Node(bounds, spec_chunk, thres, parent_lvl=self.level))
+            # else:
+            #     print('omitted noise sep peak at ', bounds, 'between ', self.bounds, h.lin2z(prom))
 
     def add_min(self, new_index, current_thres):
         if new_index < self.bounds[0] or new_index > self.bounds[1]:
@@ -69,8 +78,21 @@ class Node():
             fitting_child[0].add_min(new_index, current_thres)
         # or insert here
         else:
-            self.children.append(Node((self.bounds[0], new_index), current_thres, parent_lvl=self.level))
-            self.children.append(Node((new_index, self.bounds[1]), current_thres, parent_lvl=self.level))
+            spec_left = self.spec[:new_index+1-self.bounds[0]]
+            prom_left = spec_left[spec_left.argmax()]/current_thres
+            # print('spec_chunk left ', self.bounds[0], new_index, h.lin2z(prom_left), spec_left)
+            spec_right = self.spec[new_index-self.bounds[0]:]
+            prom_right = spec_right[spec_right.argmax()]/current_thres
+            # print('spec_chunk right ', self.bounds[0], new_index, h.lin2z(prom_right), spec_right)
+
+            if h.lin2z(prom_left) > self.prom_filter\
+                and h.lin2z(prom_right) > self.prom_filter:
+                self.children.append(Node((self.bounds[0], new_index), 
+                                     spec_left, current_thres, parent_lvl=self.level))
+                self.children.append(Node((new_index, self.bounds[1]), 
+                                     spec_right, current_thres, parent_lvl=self.level))
+            # else:
+            #     print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
                         
     def __str__(self):
         string = str(self.level) + ' ' + self.level*'  ' + str(self.bounds) + "   [{:4.3e}]".format(self.threshold)
@@ -184,15 +206,18 @@ class peakTree():
             #print('smoothed spectrum')
             spectrum['specZ'] = np.convolve(spectrum['specZ'], np.array([0.5,1,0.5])/2.0, mode='same')
 
-
+        # for i in range(spectrum['specZ'].shape[0]):
+        #     if not spectrum['specZ'][i] == 0:
+        #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
         masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 1e-30)
         peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
         if peak_ind:
-            t = Node((0, spectrum['specZ'].shape[0]-1), spectrum['noise_thres'], root=True)
-            t.add_noise_sep(peak_ind, spectrum['noise_thres'])
+            t = Node((0, spectrum['specZ'].shape[0]-1), spectrum['specZ'], spectrum['noise_thres'], root=True)
+            t.add_noise_sep(peak_ind, spectrum['specZ'], spectrum['noise_thres'])
             # minima only inside main peaks
             #minima = get_minima(np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres']*1.1))
-            minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
+            #minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
+            minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
             for m in minima:
                 #print('minimum ', m)
                 t.add_min(m[0], m[1])
@@ -302,8 +327,12 @@ class peakTreeBuffer():
 
         returns a dictionary with all nodes and the parameters of each node
         """
-        it = np.where(self.timestamps == min(self.timestamps, key=lambda t: abs(sel_ts - t)))[0]
-        ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0]
+        if type(sel_ts) is tuple and type(sel_range) is tuple:
+            it, sel_ts = sel_ts
+            ir, sel_range = sel_range
+        else:
+            it = np.where(self.timestamps == min(self.timestamps, key=lambda t: abs(sel_ts - t)))[0][0]
+            ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0][0]
         print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], 'height', ir, self.range[ir]) if not silent else None
         assert np.abs(sel_ts - self.timestamps[it]) < self.delta_ts, 'timestamps more than '+str(self.delta_ts)+'s apart'
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
@@ -321,8 +350,8 @@ class peakTreeBuffer():
             specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
             specSNRco_mask = specSNRco == 0.
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if np.all(specZ_mask) else specZ[~specZ_mask].min()
-            spectrum = {'ts': self.timestamps[it][0], 'range': self.range[ir][0], 'vel': self.velocity,
+            noise_thres = 1e-25 if np.all(specZ_mask) else specZ[~specZ_mask].min()*h.z2lin(self.settings['thres_factor_co'])
+            spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
                         'specZ': specZ[::-1], 'noise_thres': noise_thres}
             spectrum['specZ_mask'] = specZ_mask[::-1]
             spectrum['specSNRco'] = specSNRco[::-1]
@@ -432,7 +461,8 @@ class peakTreeBuffer():
         for it, ts in enumerate(self.timestamps[:]):
             print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it])
             for ir, rg in enumerate(self.range[:]):
-                trav_tree, _ = self.get_tree_at(ts, rg, silent=True)
+                #trav_tree, _ = self.get_tree_at(ts, rg, silent=True)
+                trav_tree, _ = self.get_tree_at((it, ts), (ir, rg), silent=True)
 
                 no_nodes[it,ir] = len(list(trav_tree.keys()))
 
@@ -454,7 +484,7 @@ class peakTreeBuffer():
 
         filename = outdir + '{}_peakTree.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'))
         print('output filename ', filename)
-
+        
         with netCDF4.Dataset(filename, 'w', format='NETCDF4') as dataset:
             dim_time = dataset.createDimension('time', Z.shape[0])
             dim_range = dataset.createDimension('range', Z.shape[1])
