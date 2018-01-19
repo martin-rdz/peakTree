@@ -14,7 +14,7 @@ import peakTree.helpers as h
 ts = h.dt_to_ts(datetime.datetime(2017,3,11,20,15))
 rg = 3300
 ts = 1489265220
-ts = 1489262407
+#ts = 1489262407
 rg = 3500
 
 pTB = peakTree.peakTreeBuffer()

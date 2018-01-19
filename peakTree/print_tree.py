@@ -19,11 +19,13 @@ def coord_pattern_child(p):
 
 
 def iterchilds(travtree, parentcoord):
+    """generator that yields all childs of a parent with given coordinats"""
     for n in list(filter(coord_pattern_child(parentcoord), travtree.values())):
         yield n
         yield from iterchilds(travtree, n['coords'])
 
 def iternodes(travtree):
+    """generator that yields a full traversal of the tree"""
     level_no=0
     nodes = list(filter(lambda d: len(d['coords']) == level_no+1, travtree.values()))
     for n in nodes:
@@ -31,6 +33,7 @@ def iternodes(travtree):
         yield from iterchilds(travtree, n['coords'])
 
 def travtree2text(travtree, show_coordinats=True):
+    """returns a string with the tabular representation of the traversed tree"""
     lines = []
     levels = max(list(map(lambda v: len(v['coords']), travtree.values())))
     if show_coordinats:
@@ -59,26 +62,35 @@ def travtree2text(travtree, show_coordinats=True):
     return '\n'.join(lines)
 
 
-def gen_lines_to_par(trav_tree):
+def gen_lines_to_par(travtree):
+    """get all the connection lines between the nodes of travtree"""
     chunks = []
-    for k,v in trav_tree.items():
+    for k,v in travtree.items():
         if v['parent_id'] != -1:
-            x = [v['v'], trav_tree[v['parent_id']]['v']]
-            y = [v['z'], trav_tree[v['parent_id']]['z']]
+            x = [v['v'], travtree[v['parent_id']]['v']]
+            y = [v['z'], travtree[v['parent_id']]['z']]
             chunks.append((x,y))
     return chunks
 
 
-def plot_spectrum(trav_tree, spectrum, savepath):
+def plot_spectrum(travtree, spectrum, savepath):
+    """
+    plot the spectrum together with the traversed tree
+    :savepath : path to save or None
+    :return : fig, ax
+    """
+    dt=h.ts_to_dt(spectrum['ts'])
+
     valid_LDR = np.ma.masked_where(spectrum['specLDRmasked_mask'], spectrum['specZcx'])
     decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])-spectrum['decoupling'])
     
     fig, ax = plt.subplots(1, figsize=(8, 7), sharex=True)
 
-    for chunk in gen_lines_to_par(trav_tree):
+    #plot the tree structure
+    for chunk in gen_lines_to_par(travtree):
         ax.plot(chunk[0], h.lin2z(np.array(chunk[1])), '-', color='grey')
 
-    flatten = [(item[1]['v'],item[1]['z']) for item in trav_tree.items()]
+    flatten = [(item[1]['v'],item[1]['z']) for item in travtree.items()]
     ax.plot([e[0] for e in flatten], h.lin2z(np.array([e[1] for e in flatten])), 'o', color='r', markersize=5)
 
     #ax.hlines(h.lin2z(valid_LDR), -10, 10, color='grey')
@@ -99,14 +111,21 @@ def plot_spectrum(trav_tree, spectrum, savepath):
     ax.set_ylabel('Reflectivity [dBZ]')
     ax.set_xlabel('Velocity [m s$\\mathregular{^{-1}}$]')
     ax.set_ylim(bottom=-65)
-    ax.legend()
-    ax.set_title('{:.0f} {:0>5.0f} m'.format(spectrum['ts'], spectrum['range']))
+    #special for the convective case
+    # ax.set_ylim(bottom=-75)
+    # ax.set_xlim([-8.5, 8.5])
+
+    ax.legend(loc='upper right')
+    ax.set_title('{} {:0>5.0f} m'.format(dt.strftime('%Y-%m-%d %H:%M:%S'), spectrum['range']))
     fig.subplots_adjust(bottom=0.5, top=0.95)
 
-    if trav_tree != {}:
-        txt = travtree2text(trav_tree, show_coordinats=False)
+    if travtree != {}:
+        txt = travtree2text(travtree, show_coordinats=False)
         ax.text(0.03, 0.42, txt,
                 horizontalalignment='left', verticalalignment='top',
                 transform=fig.transFigure, fontsize=11, family='monospace',)
-    savename = '{:.0f}_{:0>5.0f}m_spectrum.png'.format(spectrum['ts'], spectrum['range'])
-    fig.savefig(savepath + savename)
+
+    if savepath is not None:
+        savename = '{}_{:0>5.0f}m_spectrum.png'.format(dt.strftime('%Y-%m-%d_%H%M%S'), spectrum['range'])
+        fig.savefig(savepath + savename)
+    return fig, ax

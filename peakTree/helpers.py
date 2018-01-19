@@ -12,6 +12,7 @@ import numpy as np
 
 
 def list_of_elem(elem, length):
+    """return a list of given length of given elements"""
     return [elem for i in range(length)]
 
 
@@ -41,6 +42,7 @@ def z2lin(array):
     return 10**(array/10.)
 
 def fill_with(array, mask, fill):
+    """fill array where mask is True with fill value"""
     filled = array.copy()
     filled[mask] = fill
     return filled

@@ -48,6 +48,29 @@ def get_minima(array):
     minima = list(zip(min_ind, array[min_ind]))
     return sorted(minima, key=lambda x: x[1])
 
+def split_peak_ind_by_space(peak_ind):
+    """
+    split a list of peak indices by their maximum space
+    :peak_ind : list of peak indices [(163, 165), (191, 210), (222, 229), (248, 256)]
+    :return : left, right sublist
+    """
+    if len(peak_ind) == 1:
+        return [peak_ind, peak_ind]
+    left_i = np.array([elem[0] for elem in peak_ind])
+    right_i = np.array([elem[1] for elem in peak_ind])
+    spacing = left_i[1:]-right_i[:-1]
+    split_i = np.argmax(spacing)
+    return peak_ind[:split_i+1], peak_ind[split_i+1:]
+
+
+def peak_pairs_to_call(peak_ind):
+    """generator that yields the tree structure of a peak list based on spacing"""
+    left, right = split_peak_ind_by_space(peak_ind)
+    if left != right:
+        yield (left[0][0], left[-1][-1]), (right[0][0], right[-1][-1])
+        yield from peak_pairs_to_call(left)
+        yield from peak_pairs_to_call(right)
+
 
 class Node():
     def __init__(self, bounds, spec_chunk, noise_thres, root=False, parent_lvl=0):
@@ -60,14 +83,19 @@ class Node():
         self.prom_filter = 1.
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
-    def add_noise_sep(self, list_of_bounds, spec, thres):
-        for bounds in list_of_bounds:
-            spec_chunk = spec[bounds[0]:bounds[1]+1]
-            prom = spec_chunk[spec_chunk.argmax()]/thres
-            if h.lin2z(prom) > self.prom_filter:
-                self.children.append(Node(bounds, spec_chunk, thres, parent_lvl=self.level))
-            # else:
-            #     print('omitted noise sep peak at ', bounds, 'between ', self.bounds, h.lin2z(prom))
+    def add_noise_sep(self, bounds_left, bounds_right, thres):
+
+        fitting_child = list(filter(lambda x: x.bounds[0] <= bounds_left[0] and x.bounds[1] >= bounds_right[1], self.children))
+        if len(fitting_child) == 1:
+            #recurse on
+            fitting_child[0].add_noise_sep(bounds_left, bounds_right, thres)
+        else:
+            # insert here
+            spec_left = self.spec[bounds_left[0]-self.bounds[0]:bounds_left[1]+1-self.bounds[0]]
+            spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
+            self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
+            self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
+
 
     def add_min(self, new_index, current_thres):
         if new_index < self.bounds[0] or new_index > self.bounds[1]:
@@ -201,6 +229,7 @@ class peakTree():
 
         spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
             'specZ': specZ, 'noise_thres': specZ.min()}
+        :return : traversed
         """
         if smooth:
             #print('smoothed spectrum')
@@ -209,18 +238,28 @@ class peakTree():
         # for i in range(spectrum['specZ'].shape[0]):
         #     if not spectrum['specZ'][i] == 0:
         #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
-        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 1e-30)
+        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
         peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
         if peak_ind:
-            t = Node((0, spectrum['specZ'].shape[0]-1), spectrum['specZ'], spectrum['noise_thres'], root=True)
-            t.add_noise_sep(peak_ind, spectrum['specZ'], spectrum['noise_thres'])
+            # print('peak ind at noise  level', peak_ind)
+            if len(peak_ind) == 0:
+                t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
+            else:
+                t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
+                for peak_pair in peak_pairs_to_call(peak_ind):
+                    # print('peak pair', peak_pair)
+                    t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+
             # minima only inside main peaks
             #minima = get_minima(np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres']*1.1))
             #minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
             minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
             for m in minima:
-                #print('minimum ', m)
-                t.add_min(m[0], m[1])
+                # print('minimum ', m)
+                if m[1]>spectrum['noise_thres']*1.1:
+                    t.add_min(m[0], m[1])
+                else:
+                    print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
             #print(t)
             traversed = coords_to_id(list(traverse(t, [0])))
             for i in traversed.keys():
@@ -400,15 +439,15 @@ class peakTreeBuffer():
             spectrum['specLDRmasked'][spectrum['specLDRmasked_mask']] = np.nan
 
             spectrum['decoupling'] = decoupling
-            trav_tree = peakTree().get_from_spectrum(spectrum, self.settings['smooth'])
+            travtree = peakTree().get_from_spectrum(spectrum, self.settings['smooth'])
 
-            return trav_tree, spectrum
+            return travtree, spectrum
 
         elif self.type == 'peakTree':
             settings_file = ast.literal_eval(self.f.settings)
             self.settings['max_no_nodes'] = settings_file['max_no_nodes']
             print('load tree from peakTree; no_nodes ', self.no_nodes[it,ir])
-            trav_tree = {}            
+            travtree = {}            
             print('peakTree parent', self.f.variables['parent'][it,ir,:])
 
             avail_nodes = min(self.settings['max_no_nodes'], int(self.no_nodes[it, ir]))
@@ -430,13 +469,13 @@ class peakTreeBuffer():
                 if k == 0:
                     node['coords'] = [0]
                 else:
-                    coords = trav_tree[node['parent_id']]['coords']
-                    siblings = list(filter(lambda d: d['coords'][:-1] == coords, trav_tree.values()))
+                    coords = travtree[node['parent_id']]['coords']
+                    siblings = list(filter(lambda d: d['coords'][:-1] == coords, travtree.values()))
                     #print('parent_id', node['parent_id'], 'siblings ', siblings)
                     node['coords'] = coords + [len(siblings)]
-                trav_tree[k] = node
+                travtree[k] = node
       
-            return trav_tree, None
+            return travtree, None
 
     #@profile
     def assemble_time_height(self, outdir):
@@ -461,14 +500,14 @@ class peakTreeBuffer():
         for it, ts in enumerate(self.timestamps[:]):
             print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it])
             for ir, rg in enumerate(self.range[:]):
-                #trav_tree, _ = self.get_tree_at(ts, rg, silent=True)
-                trav_tree, _ = self.get_tree_at((it, ts), (ir, rg), silent=True)
+                #travtree, _ = self.get_tree_at(ts, rg, silent=True)
+                travtree, _ = self.get_tree_at((it, ts), (ir, rg), silent=True)
 
-                no_nodes[it,ir] = len(list(trav_tree.keys()))
+                no_nodes[it,ir] = len(list(travtree.keys()))
 
                 #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir])
                 for k in range(min(max_no_nodes, int(no_nodes[it,ir]))):
-                    val = trav_tree[k]
+                    val = travtree[k]
                     #print(k,val)
                     Z[it,ir,k] = h.lin2z(val['z'])
                     v[it,ir,k] = val['v']
