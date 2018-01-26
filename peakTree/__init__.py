@@ -134,6 +134,22 @@ def traverse(Node, coords):
     for i, n in enumerate(Node.children):
         yield from traverse(n, coords + [i])
 
+
+def full_tree_id(coord):
+    '''convert a coordinate to the id from the full binary tree
+    [0] -> 0
+    [0, 1] -> 2
+    [0, 0, 0] -> 3
+    [0, 1, 1, 0] -> 13
+    '''
+    idx = 2**(len(coord)-1)-1
+    for ind, flag in enumerate(reversed(coord)):
+        if flag == 1:
+            idx += (2**ind)
+    #print(coord,'->',idx)
+    return idx
+
+
 #@profile
 def coords_to_id(traversed):
     """
@@ -141,18 +157,25 @@ def coords_to_id(traversed):
     input: traversed tree (list?)
     returns: traversed tree (dict)
     """
-    traversed_id = {}   
-    level_no = 0
-    while True:
-        current_level =list(filter(lambda d: len(d['coords']) == level_no+1, traversed))
-        if len(current_level) == 0:
-            break
-        for d in sorted(current_level, key=lambda d: sum(d['coords'])):
-            k = len(traversed_id.keys())
-            traversed_id[k] = d
-            parent = [k for k, val in traversed_id.items() if val['coords'] == d['coords'][:-1]]
-            traversed_id[k]['parent_id'] = parent[0] if len(parent) == 1 else -1
-        level_no += 1
+    traversed_id = {}  
+    #print('coords to id, traversed ', traversed) 
+    for node in traversed:
+        k = full_tree_id(node['coords'])
+        traversed_id[k] = node
+        parent = [k for k, val in traversed_id.items() if val['coords'] == node['coords'][:-1]]
+        traversed_id[k]['parent_id'] = parent[0] if len(parent) == 1 else -1
+    # level_no = 0
+    # while True:
+    #     current_level =list(filter(lambda d: len(d['coords']) == level_no+1, traversed))
+    #     if len(current_level) == 0:
+    #         break
+    #     for d in sorted(current_level, key=lambda d: sum(d['coords'])):
+    #         k = full_tree_id(d['coords'])
+    #         traversed_id[k] = d
+    #         parent = [k for k, val in traversed_id.items() if val['coords'] == d['coords'][:-1]]
+    #         traversed_id[k]['parent_id'] = parent[0] if len(parent) == 1 else -1
+    #     level_no += 1
+    #print('coords to id, traversed_id ', traversed_id)
     return traversed_id
 
 def moment(x, Z):
@@ -259,7 +282,8 @@ class peakTree():
                 if m[1]>spectrum['noise_thres']*1.1:
                     t.add_min(m[0], m[1])
                 else:
-                    print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
+                    #print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
+                    pass
             #print(t)
             traversed = coords_to_id(list(traverse(t, [0])))
             for i in traversed.keys():
@@ -314,6 +338,33 @@ def get_git_hash():
     return label.rstrip()
 
 
+def time_index(timestamps, sel_ts):
+    return np.where(timestamps == min(timestamps, key=lambda t: abs(sel_ts - t)))[0][0]
+
+
+def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
+    """
+    get the mapping from timestamp indices to gridded times
+    eg for use in interpolation routines
+    
+    :filter_empty : include the bins that are empty
+    :returns : list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
+    """
+    grid = np.arange(ts_range[0], ts_range[1]+1, time_interval)
+    grid_mid = grid[:-1] + np.diff(grid)/2
+
+    corresponding_grid = np.digitize(timestamps, grid)-1
+    bincount = np.bincount(corresponding_grid)
+    end_index = np.cumsum(bincount)
+    begin_index = end_index - bincount
+    
+    out = zip(grid[:-1], grid[1:], grid_mid, begin_index, end_index, bincount)
+    if filter_empty:
+        out = filter(lambda x: x[5] !=0, out)
+    out = list(out)
+    return [np.array(list(map(lambda e: e[i], out))) for i in range(6)]
+
+
 class peakTreeBuffer():
     """
     -read write
@@ -325,8 +376,18 @@ class peakTreeBuffer():
                          'smooth': True,
                          'max_no_nodes': 15,
                          'thres_factor_co': 3.0,
-                         'thres_factor_cx': 3.0}
+                         'thres_factor_cx': 3.0,
+                         'station_altitude': 12}
         self.location = 'Limassol'
+
+
+        self.settings = {'decoupling': 25,
+                         'smooth': True,
+                         'max_no_nodes': 15,
+                         'thres_factor_co': 3.0,
+                         'thres_factor_cx': 3.0,
+                         'station_altitude': 12}
+        self.location = 'Polarstern'
 
     def load_spec_file(self, filename):
         """load spectra raw file"""
@@ -342,6 +403,7 @@ class peakTreeBuffer():
         print('range ', self.range[:10])
         self.velocity = self.f.variables['velocity'][:]
         print('velocity ', self.velocity[:10])
+        print('Z chunking ', self.f.variables['Z'].chunking())
 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
@@ -357,7 +419,7 @@ class peakTreeBuffer():
         self.no_nodes = self.f.variables['no_nodes'][:]
 
     #@profile
-    def get_tree_at(self, sel_ts, sel_range, silent=False):
+    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, silent=False):
         """
         get the tree at specified time
 
@@ -370,28 +432,57 @@ class peakTreeBuffer():
             it, sel_ts = sel_ts
             ir, sel_range = sel_range
         else:
-            it = np.where(self.timestamps == min(self.timestamps, key=lambda t: abs(sel_ts - t)))[0][0]
+            it = time_index(self.timestamps, sel_ts)
             ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0][0]
         print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], 'height', ir, self.range[ir]) if not silent else None
         assert np.abs(sel_ts - self.timestamps[it]) < self.delta_ts, 'timestamps more than '+str(self.delta_ts)+'s apart'
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
+
+        if type(temporal_average) is tuple:
+            it_b, it_e = temporal_average
+        elif temporal_average:
+            it_b = time_index(self.timestamps, sel_ts-temporal_average/2.)
+            it_e = time_index(self.timestamps, sel_ts+temporal_average/2.)
+            assert self.timestamps[it_e] - self.timestamps[it_b] < 15, 'found averaging range too large'
+            print('time ', it_b, h.ts_to_dt(self.timestamps[it_b]), it_e, h.ts_to_dt(self.timestamps[it_e])) if not silent else None
 
         if self.type == 'spec':
             decoupling = self.settings['decoupling']
 
             # why is ravel necessary here?
             # flatten seems to faster
-            specZ = self.f.variables['Z'][:,ir,it].ravel()
-            specZ_mask = specZ == 0.
-            #print('specZ.shape', specZ.shape, specZ)
-            specLDR = self.f.variables['LDR'][:,ir,it].ravel()
-            specLDR_mask = np.isnan(specLDR)
-            specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
-            specSNRco_mask = specSNRco == 0.
+            if not temporal_average:
+                specZ = self.f.variables['Z'][:,ir,it].ravel()
+                specZ_mask = specZ == 0.
+                #print('specZ.shape', specZ.shape, specZ)
+                specLDR = self.f.variables['LDR'][:,ir,it].ravel()
+                specLDR_mask = np.isnan(specLDR)
+                specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
+                specSNRco_mask = specSNRco == 0.
+                no_averages = 0
+            else: 
+                specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
+                no_averages = specZ.shape[1]
+                specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
+                specZcx = specZ*specLDR
+                specZcx = np.average(specZcx, axis=1)
+                specZ = np.average(specZ, axis=1)
+
+                specLDR = specZcx/specZ
+                specZ_mask = specZ == 0.
+                specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+                
+                specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
+                specSNRco = np.average(specSNRco, axis=1)
+                specSNRco_mask = specSNRco == 0.
+                # print('specZ', specZ.shape, specZ)
+                # print('specLDR', specLDR.shape, specLDR)
+                # print('specSNRco', specSNRco.shape, specSNRco)
+
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if np.all(specZ_mask) else specZ[~specZ_mask].min()*h.z2lin(self.settings['thres_factor_co'])
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
-                        'specZ': specZ[::-1], 'noise_thres': noise_thres}
+                        'specZ': specZ[::-1], 'noise_thres': noise_thres, 'no_temp_avg': no_averages}
             spectrum['specZ_mask'] = specZ_mask[::-1]
             spectrum['specSNRco'] = specSNRco[::-1]
             spectrum['specSNRco_mask'] = specSNRco_mask[::-1]
@@ -466,14 +557,19 @@ class peakTreeBuffer():
                         'ldrmax': h.z2lin(np.asscalar(self.f.variables['ldrmax'][it,ir,k])),
                         'prominence': h.z2lin(np.asscalar(self.f.variables['prominence'][it,ir,k])),
                         'v': np.asscalar(self.f.variables['v'][it,ir,k])}
-                if k == 0:
-                    node['coords'] = [0]
-                else:
-                    coords = travtree[node['parent_id']]['coords']
-                    siblings = list(filter(lambda d: d['coords'][:-1] == coords, travtree.values()))
-                    #print('parent_id', node['parent_id'], 'siblings ', siblings)
-                    node['coords'] = coords + [len(siblings)]
-                travtree[k] = node
+                if node['parent_id'] != -999:
+                    if k == 0:
+                        node['coords'] = [0]
+                    else:
+                        coords = travtree[node['parent_id']]['coords']
+                        if k%2 == 0:
+                            node['coords'] = coords + [1]
+                        else:
+                            node['coords'] = coords + [0]
+                        #siblings = list(filter(lambda d: d['coords'][:-1] == coords, travtree.values()))
+                        # #print('parent_id', node['parent_id'], 'siblings ', siblings)
+                        #node['coords'] = coords + [len(siblings)]
+                    travtree[k] = node
       
             return travtree, None
 
@@ -482,8 +578,15 @@ class peakTreeBuffer():
         """ convert a whole spectra file to the peakTree node file"""
         #self.timestamps = self.timestamps[:10]
 
+        grid_time = True
+        if grid_time:
+            time_grid = get_time_grid(self.timestamps, (self.timestamps[0], self.timestamps[-1]), 10)
+            timestamps_grid = time_grid[2]
+        else:
+            timestamps_grid = self.timestamps
+
         max_no_nodes=self.settings['max_no_nodes']
-        Z = np.zeros((self.timestamps.shape[0], self.range.shape[0], max_no_nodes))
+        Z = np.zeros((timestamps_grid.shape[0], self.range.shape[0], max_no_nodes))
         Z[:] = -999
         v = Z.copy()
         width = Z.copy()
@@ -495,31 +598,40 @@ class peakTreeBuffer():
         thres = Z.copy()
         ldrmax = Z.copy()
         prominence = Z.copy()
-        no_nodes = np.zeros((self.timestamps.shape[0], self.range.shape[0]))
+        no_nodes = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
 
-        for it, ts in enumerate(self.timestamps[:]):
-            print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it])
+        for it, ts in enumerate(timestamps_grid[:]):
+            print('it, ts', it, ts)
+            it_radar = time_index(self.timestamps, ts)
+            print('time ', it, h.ts_to_dt(timestamps_grid[it]), timestamps_grid[it], 'radar ', h.ts_to_dt(self.timestamps[it_radar]), self.timestamps[it_radar])
+            if grid_time:
+                temp_avg = time_grid[3][it], time_grid[4][it]
+                print(temp_avg)
+
             for ir, rg in enumerate(self.range[:]):
                 #travtree, _ = self.get_tree_at(ts, rg, silent=True)
-                travtree, _ = self.get_tree_at((it, ts), (ir, rg), silent=True)
+                if grid_time:
+                    travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
+                else:
+                    travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
 
                 no_nodes[it,ir] = len(list(travtree.keys()))
-
                 #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir])
                 for k in range(min(max_no_nodes, int(no_nodes[it,ir]))):
-                    val = travtree[k]
-                    #print(k,val)
-                    Z[it,ir,k] = h.lin2z(val['z'])
-                    v[it,ir,k] = val['v']
-                    width[it,ir,k] = val['width']
-                    LDR[it,ir,k] = h.lin2z(val['ldr'])
-                    skew[it,ir,k] = val['skew']
-                    bound_l[it,ir,k] = val['bounds'][0]
-                    bound_r[it,ir,k] = val['bounds'][1]
-                    parent[it,ir,k] = val['parent_id']
-                    thres[it,ir,k] = h.lin2z(val['thres'])
-                    ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
-                    prominence[it,ir,k] = h.lin2z(val['prominence'])
+                    if k in travtree.keys():
+                        val = travtree[k]
+                        #print(k,val)
+                        Z[it,ir,k] = h.lin2z(val['z'])
+                        v[it,ir,k] = val['v']
+                        width[it,ir,k] = val['width']
+                        LDR[it,ir,k] = h.lin2z(val['ldr'])
+                        skew[it,ir,k] = val['skew']
+                        bound_l[it,ir,k] = val['bounds'][0]
+                        bound_r[it,ir,k] = val['bounds'][1]
+                        parent[it,ir,k] = val['parent_id']
+                        thres[it,ir,k] = h.lin2z(val['thres'])
+                        ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
+                        prominence[it,ir,k] = h.lin2z(val['prominence'])
 
         filename = outdir + '{}_peakTree.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'))
         print('output filename ', filename)
@@ -532,12 +644,25 @@ class peakTreeBuffer():
             dataset.createDimension('mode', 1)
 
             times = dataset.createVariable('timestamp', np.int32, ('time',))
-            times[:] = self.timestamps.astype(np.int32)
+            times[:] = timestamps_grid.astype(np.int32)
             times.long_name = 'Unix timestamp [s]'
+
+            dt_list = [h.ts_to_dt(ts) for ts in timestamps_grid]
+            hours_cn = np.array([dt.hour + dt.minute / 60. + dt.second / 3600. for dt in dt_list])
+            times_cn = dataset.createVariable('time', np.float32, ('time',))
+            times_cn[:] = hours_cn.astype(np.float32)
+            times_cn.units = "hours since " + self.begin_dt.strftime('%Y-%m-%d') + " 00:00:00 +00:00"
+            times_cn.long_name = "Decimal hours from midnight UTC"
+            times_cn.axis = "T"
 
             rg = dataset.createVariable('range', np.float32, ('range',))
             rg[:] = self.range.astype(np.float32)
             rg.long_name = 'range [m]'
+
+            height = self.range + self.settings['station_altitude']
+            hg = dataset.createVariable('height', np.float32, ('range',))
+            hg[:] = height
+            hg.long_name = 'Height above mean sea level [m]'
 
             vel = dataset.createVariable('velocity', np.float32, ('vel',))
             vel[:] = self.velocity.astype(np.float32)

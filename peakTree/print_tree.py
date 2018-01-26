@@ -13,6 +13,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import helpers as h
 
+import graphviz
+import json
+
+
 def coord_pattern_child(p):
     """the coordinate pattern required for filtering the dictionary for children"""
     return lambda d: d['coords'][:-1] == p and len(d['coords']) == len(p)+1
@@ -117,7 +121,12 @@ def plot_spectrum(travtree, spectrum, savepath):
 
     ax.legend(loc='upper right')
     ax.set_title('{} {:0>5.0f} m'.format(dt.strftime('%Y-%m-%d %H:%M:%S'), spectrum['range']))
+    ax.xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+    ax.tick_params(axis='both', which='major', width=1.5, right=True, top=True)
+    ax.tick_params(axis='both', which='minor', width=1.3, right=True, top=True)
     fig.subplots_adjust(bottom=0.5, top=0.95)
+
 
     if travtree != {}:
         txt = travtree2text(travtree, show_coordinats=False)
@@ -127,5 +136,63 @@ def plot_spectrum(travtree, spectrum, savepath):
 
     if savepath is not None:
         savename = '{}_{:0>5.0f}m_spectrum.png'.format(dt.strftime('%Y-%m-%d_%H%M%S'), spectrum['range'])
-        fig.savefig(savepath + savename)
+        fig.savefig(savepath + savename, dpi=250)
     return fig, ax
+
+def render_node_table(key, value):
+    string = """{} [label=<<font face='helvetica' point-size="9"><table border="0" cellborder="0" cellspacing="0">
+       <tr><td colspan='4'><font point-size='12'><B>node {}</B></font></td></tr>
+       <tr><td>Z:</td><td align='right'>{:.2f}</td><td>w:</td><td align='right'>{:.2f}</td></tr>
+       <tr><td>v:</td><td align='right'>{:.2f}</td><td>s:</td><td align='right'>{:.2f}</td></tr>
+     </table></font>>]""".format(key, key, h.lin2z(value['z']), value['width'], value['v'], value['skew'])
+
+    return string
+
+def dot_format(travtree):
+    print('dot format travtree', travtree)
+    node_props = [render_node_table(*elem) for elem in travtree.items()]
+    connections = ['{} -> {};'.format(v['parent_id'], k) for k,v in travtree.items() if not v['parent_id'] == -1]
+    string = ['digraph G { graph [fontname = "helvetica"] node [shape=ellipse]'] + node_props + connections + ['}']
+    # string = ['graph [fontname = "helvetica"] node [shape=ellipse] ',  
+    #           'subgraph cluster1 { '+'label=<<font point-size="11">{} {:0>5.0f}m</font>>'.format(dt.strftime('%Y-%m-%d_%H%M%S'), rg)]\
+    #            + node_props + connections + ['}']
+    return '\n'.join(string)
+
+def vis_tree(dot):
+
+    src = graphviz.Source(dot)
+    return src
+
+
+
+def format_for_json(elem):
+    if isinstance(elem, np.integer):
+        return int(elem)
+    elif isinstance(elem, np.floating):
+        return round(float(elem), 4)
+    elif isinstance(elem, np.ndarray):
+        return elem.tolist()
+    elif isinstance(elem, float):
+        return round(elem, 4)
+    else:
+        return elem
+
+
+def d3_format(travtree):
+
+    nodes = []
+    for k, v in travtree.items():
+        v['id'] = k
+        v['bounds'] = list(map(int, v['bounds']))
+        if v['parent_id'] == -1:
+            del v['parent_id']
+        v['z'] =h.lin2z(v['z']) 
+        v['ldr'] = h.lin2z(v['ldr'])
+        v['ldrmax'] = h.lin2z(v['ldrmax'])
+        v['thres'] = h.lin2z(v['thres'])
+        v = {ky: format_for_json(val) for ky, val in v.items()}
+        nodes.append(v)
+    return json.dumps(nodes)
+        
+        
+
