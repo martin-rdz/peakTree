@@ -85,8 +85,9 @@ def plot_spectrum(travtree, spectrum, savepath):
     """
     dt=h.ts_to_dt(spectrum['ts'])
 
-    valid_LDR = np.ma.masked_where(spectrum['specLDRmasked_mask'], spectrum['specZcx'])
-    decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])-spectrum['decoupling'])
+    decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])+spectrum['decoupling'])
+    # cut again to remove the smoothing effects at the edges
+    specZ_cut = np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres'])
     
     fig, ax = plt.subplots(1, figsize=(8, 7), sharex=True)
 
@@ -103,16 +104,16 @@ def plot_spectrum(travtree, spectrum, savepath):
     ax.step(spectrum['vel'], h.lin2z(spectrum['specLDRmasked']), 
              linewidth=1.5, color='blue', where='mid', label='specLDR')
 
-    ax.step(spectrum['vel'], h.lin2z(spectrum['specZ']), 
+    ax.step(spectrum['vel'], h.lin2z(spectrum['specZ']),
+            linewidth=1.5, color='pink', where='mid')
+    ax.step(spectrum['vel'], h.lin2z(specZ_cut),
             linewidth=1.5, color='red', where='mid', label='specZ')
     ax.step(spectrum['vel'], h.lin2z(spectrum['specZcx']), 
-            linewidth=1.5, color='crimson', where='mid', label='specZcx')
-    ax.step(spectrum['vel'], h.lin2z(valid_LDR), 
-            linewidth=1.5, color='blue', where='mid', label='specZcx')
+            linewidth=1.5, color='darkviolet', where='mid', label='specZcx')
     ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
             linewidth=1.5, color='grey', where='mid', label='decoupling')
     ax.set_xlim([-6,3])
-    ax.set_ylabel('Reflectivity [dBZ]')
+    ax.set_ylabel('Spectral Reflectivity [dBZ]')
     ax.set_xlabel('Velocity [m s$\\mathregular{^{-1}}$]')
     ax.set_ylim(bottom=-65)
     #special for the convective case
@@ -140,19 +141,30 @@ def plot_spectrum(travtree, spectrum, savepath):
     return fig, ax
 
 def render_node_table(key, value):
-    string = """{} [label=<<font face='helvetica' point-size="9"><table border="0" cellborder="0" cellspacing="0">
-       <tr><td colspan='4'><font point-size='12'><B>node {}</B></font></td></tr>
-       <tr><td>Z:</td><td align='right'>{:.2f}</td><td>w:</td><td align='right'>{:.2f}</td></tr>
-       <tr><td>v:</td><td align='right'>{:.2f}</td><td>s:</td><td align='right'>{:.2f}</td></tr>
-     </table></font>>]""".format(key, key, h.lin2z(value['z']), value['width'], value['v'], value['skew'])
-
+    string = """{} [label=<<font face='helvetica' point-size="10"><table border="0" cellborder="0" cellspacing="0">
+       <tr><td colspan='4'><font point-size='11'><B>node {}</B></font></td></tr>
+       <tr><td>Z:</td><td align='right'>{:.1f}</td><td>  width:</td><td align='right'>{:.2f}</td></tr>
+       <tr><td>v:</td><td align='right'>{:.2f}</td><td>  thres:</td><td align='right'>{:.1f}</td></tr>
+     </table></font>>]""".format(key, key, h.lin2z(value['z']), value['width'], value['v'], h.lin2z(value['thres']))
     return string
 
-def dot_format(travtree):
+def render_node_bounds(key, value):
+    string = """{} [label=<<font face='helvetica' point-size="11">
+    <table border="0" cellborder="0" cellspacing="0">
+    <tr><td><B>node {}</B></td></tr>
+    <tr><td>bin no {}-{}</td></tr></table></font>>]""".format(key, key, *value['bounds'])
+    return string
+
+def dot_format(travtree, display="table"):
     print('dot format travtree', travtree)
-    node_props = [render_node_table(*elem) for elem in travtree.items()]
+    if display == "table":
+        node_props = [render_node_table(*elem) for elem in travtree.items()]
+        shape = "box"
+    elif display == "bounds":
+        node_props = [render_node_bounds(*elem) for elem in travtree.items()]
+        shape = "box"
     connections = ['{} -> {};'.format(v['parent_id'], k) for k,v in travtree.items() if not v['parent_id'] == -1]
-    string = ['digraph G { graph [fontname = "helvetica"] node [shape=ellipse]'] + node_props + connections + ['}']
+    string = ['digraph G { graph [fontname = "helvetica"] node [shape='+ shape +']'] + node_props + connections + ['}']
     # string = ['graph [fontname = "helvetica"] node [shape=ellipse] ',  
     #           'subgraph cluster1 { '+'label=<<font point-size="11">{} {:0>5.0f}m</font>>'.format(dt.strftime('%Y-%m-%d_%H%M%S'), rg)]\
     #            + node_props + connections + ['}']
