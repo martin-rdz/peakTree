@@ -93,15 +93,18 @@ class Node():
             # insert here
             spec_left = self.spec[bounds_left[0]-self.bounds[0]:bounds_left[1]+1-self.bounds[0]]
             spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
-            self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
-            self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
-
+            prom_left = spec_left[spec_left.argmax()]/thres
+            prom_right = spec_right[spec_right.argmax()]/thres
+            if h.lin2z(prom_left) > self.prom_filter and h.lin2z(prom_right) > self.prom_filter:
+                self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
+                self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
+            else:
+                print('omitted noise sep. peak at ', bounds_left, bounds_right, h.lin2z(prom_left), h.lin2z(prom_right))
 
     def add_min(self, new_index, current_thres):
         if new_index < self.bounds[0] or new_index > self.bounds[1]:
             raise ValueError("child out of parents bounds")
         fitting_child = list(filter(lambda x: x.bounds[0] <= new_index and x.bounds[1] >= new_index, self.children))
-        
         if len(fitting_child) == 1:
             fitting_child[0].add_min(new_index, current_thres)
         # or insert here
@@ -111,10 +114,9 @@ class Node():
             # print('spec_chunk left ', self.bounds[0], new_index, h.lin2z(prom_left), spec_left)
             spec_right = self.spec[new_index-self.bounds[0]:]
             prom_right = spec_right[spec_right.argmax()]/current_thres
-            # print('spec_chunk right ', self.bounds[0], new_index, h.lin2z(prom_right), spec_right)
+            # print('spec_chunk right ', new_index, self.bounds[1], h.lin2z(prom_right), spec_right)
 
-            if h.lin2z(prom_left) > self.prom_filter\
-                and h.lin2z(prom_right) > self.prom_filter:
+            if h.lin2z(prom_left) > self.prom_filter and h.lin2z(prom_right) > self.prom_filter:
                 self.children.append(Node((self.bounds[0], new_index), 
                                      spec_left, current_thres, parent_lvl=self.level))
                 self.children.append(Node((new_index, self.bounds[1]), 
@@ -263,6 +265,8 @@ class peakTree():
         #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
         masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
         peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
+        # filter all peaks with that are only 1 bin wide
+        peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
         if peak_ind:
             # print('peak ind at noise  level', peak_ind)
             if len(peak_ind) == 0:
