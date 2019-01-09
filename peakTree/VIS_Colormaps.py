@@ -1,5 +1,5 @@
 """
-self added the cloudnet velocity and segmented colormap
+added the cloudnet velocity and segmented colormap
 """
 
 import matplotlib
