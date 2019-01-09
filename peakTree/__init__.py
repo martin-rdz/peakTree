@@ -1,15 +1,15 @@
 #! /usr/bin/env python3
 # coding=utf-8
+""""""
 """
 Author: radenz@tropos.de
-
-
 """
 
 import matplotlib
 matplotlib.use('Agg')
 
 import datetime
+import logging
 import ast
 import subprocess
 import netCDF4
@@ -18,10 +18,28 @@ import matplotlib.pyplot as plt
 from . import helpers as h
 from . import print_tree
 
+log = logging.getLogger(__name__)
+# log.setLevel(logging.DEBUG)
+# stream_handler = logging.StreamHandler()
+# stream_handler.setLevel(logging.INFO)
+# formatter = logging.Formatter('%(levelname)s: %(message)s')
+# stream_handler.setFormatter(formatter)
+# file_handler = logging.FileHandler(filename='../test.log', mode='w')
+# formatter = logging.Formatter('%(asctime)s-%(name)s-%(levelname)s-%(message)s', datefmt='%H:%M:%S')
+# file_handler.setFormatter(formatter)
+# file_handler.setLevel(logging.DEBUG)
+# log.addHandler(file_handler)
+# log.addHandler(stream_handler)
+
 #@profile
 def detect_peak_simple(array, lthres):
-    """
-    detect noise separated peaks
+    """detect noise separated peaks
+
+    Args:
+        array: with Doppler spectrum
+        lthres: threshold
+    Returns:
+        list of indices (as tuple)
     """
     ind = np.where(array > lthres)[0].tolist()
     jumps = [ind.index(x) for x, y in zip(ind, ind[1:]) if y - x != 1]
@@ -32,11 +50,13 @@ def detect_peak_simple(array, lthres):
         peakindices = []
     return peakindices
 
+
 #@profile
 def get_minima(array):
-    """
-    get the minima of an array by calculating the derivative
-    returns [(index, value at index), ... ]
+    """get the minima of an array by calculating the derivative
+
+    Returns:
+        list of ``(index, value at index)``
     """
     #sdiff = np.ma.diff(np.sign(np.ma.diff(array)))
     sdiff = np.diff(np.sign(np.diff(array)))
@@ -48,11 +68,15 @@ def get_minima(array):
     minima = list(zip(min_ind, array[min_ind]))
     return sorted(minima, key=lambda x: x[1])
 
+
 def split_peak_ind_by_space(peak_ind):
-    """
-    split a list of peak indices by their maximum space
-    :peak_ind : list of peak indices [(163, 165), (191, 210), (222, 229), (248, 256)]
-    :return : left, right sublist
+    """split a list of peak indices by their maximum space
+    use for noise floor separated peaks
+    
+    Args:
+        peak_ind: list of peak indices ``[(163, 165), (191, 210), (222, 229), (248, 256)]``
+    Returns:
+        left sublist, right sublist
     """
     if len(peak_ind) == 1:
         return [peak_ind, peak_ind]
@@ -64,7 +88,13 @@ def split_peak_ind_by_space(peak_ind):
 
 
 def peak_pairs_to_call(peak_ind):
-    """generator that yields the tree structure of a peak list based on spacing"""
+    """generator that yields the tree structure of a peak list based on spacing
+    
+    Args:
+        peak_ind: list of peak indices
+    Yields:
+        tree structure for noise separated peaks (includes recursive ``yield from`` for children)
+    """
     left, right = split_peak_ind_by_space(peak_ind)
     if left != right:
         yield (left[0][0], left[-1][-1]), (right[0][0], right[-1][-1])
@@ -73,6 +103,15 @@ def peak_pairs_to_call(peak_ind):
 
 
 class Node():
+    """class to generate the tree
+    
+    Args:
+        bounds: boundaries in bin coordinates
+        spec_chunk: spectral reflectivity within this node
+        noise_thres: noise threshold hat separated this peak
+        root: flag indicating if root node
+        parent_lvl: level of the parent node
+    """
     def __init__(self, bounds, spec_chunk, noise_thres, root=False, parent_lvl=0):
         self.bounds = bounds
         self.children = []
@@ -81,10 +120,17 @@ class Node():
         self.threshold = noise_thres
         self.spec = spec_chunk
         self.prom_filter = 1.
+        # TODO prominence filter to 2dB (Shupe 2004) or even 6 (Williams 2018)
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
     def add_noise_sep(self, bounds_left, bounds_right, thres):
-
+        """add a nose separated peak/node
+        
+        Args:
+            bounds_left: boundaries of the left peak
+            bounds_right: boundaries of the right peak
+            thres: threshold that separates the peaks
+        """
         fitting_child = list(filter(lambda x: x.bounds[0] <= bounds_left[0] and x.bounds[1] >= bounds_right[1], self.children))
         if len(fitting_child) == 1:
             #recurse on
@@ -99,9 +145,17 @@ class Node():
                 self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
                 self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
             else:
-                print('omitted noise sep. peak at ', bounds_left, bounds_right, h.lin2z(prom_left), h.lin2z(prom_right))
+                #print('omitted noise sep. peak at ', bounds_left, bounds_right, h.lin2z(prom_left), h.lin2z(prom_right))
+                pass
 
-    def add_min(self, new_index, current_thres):
+    def add_min(self, new_index, current_thres, ignore_prom=False):
+        """add a local minimum
+
+        Args:
+            new_index: bin index of minimum
+            current_threshold: reflectivity that separates the peaks
+            ignore_prom (optional): ignore the prominence threshold
+        """
         if new_index < self.bounds[0] or new_index > self.bounds[1]:
             raise ValueError("child out of parents bounds")
         fitting_child = list(filter(lambda x: x.bounds[0] <= new_index and x.bounds[1] >= new_index, self.children))
@@ -116,14 +170,16 @@ class Node():
             prom_right = spec_right[spec_right.argmax()]/current_thres
             # print('spec_chunk right ', new_index, self.bounds[1], h.lin2z(prom_right), spec_right)
 
-            if h.lin2z(prom_left) > self.prom_filter and h.lin2z(prom_right) > self.prom_filter:
+            cond_prom = [h.lin2z(prom_left) > self.prom_filter, h.lin2z(prom_right) > self.prom_filter]
+            if all(cond_prom) or ignore_prom:
                 self.children.append(Node((self.bounds[0], new_index), 
                                      spec_left, current_thres, parent_lvl=self.level))
                 self.children.append(Node((new_index, self.bounds[1]), 
                                      spec_right, current_thres, parent_lvl=self.level))
-            # else:
-            #     print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
-                        
+            else:
+                #print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
+                pass 
+
     def __str__(self):
         string = str(self.level) + ' ' + self.level*'  ' + str(self.bounds) + "   [{:4.3e}]".format(self.threshold)
         return "{}\n{}".format(string, ''.join([t.__str__() for t in self.children]))
@@ -131,7 +187,14 @@ class Node():
 
 #@profile
 def traverse(Node, coords):
-    """traverse a node and recursively all subnodes"""
+    """traverse a node and recursively all subnodes
+    
+    Args:
+        Node (:class:`Node`): Node object to traverse
+        coords: Nodes coordinate as list
+    Yields:
+        all child nodes recursively"
+    """
     yield {'coords': coords, 'bounds': Node.bounds, 'thres': Node.threshold}
     for i, n in enumerate(Node.children):
         yield from traverse(n, coords + [i])
@@ -139,10 +202,19 @@ def traverse(Node, coords):
 
 def full_tree_id(coord):
     '''convert a coordinate to the id from the full binary tree
-    [0] -> 0
-    [0, 1] -> 2
-    [0, 0, 0] -> 3
-    [0, 1, 1, 0] -> 13
+
+    Args:
+        coord: Nodes coordinate as a list
+    Returns:
+        index as in full binary tree
+    Example:
+
+        .. code-block:: python
+
+            [0] -> 0
+            [0, 1] -> 2
+            [0, 0, 0] -> 3
+            [0, 1, 1, 0] -> 13
     '''
     idx = 2**(len(coord)-1)-1
     for ind, flag in enumerate(reversed(coord)):
@@ -154,10 +226,12 @@ def full_tree_id(coord):
 
 #@profile
 def coords_to_id(traversed):
-    """
-    calculate the id in level-order from the coordinates
-    input: traversed tree (list?)
-    returns: traversed tree (dict)
+    """calculate the id in level-order from the coordinates
+
+    Args:
+        input: traversed tree as list of dict
+    Returns:
+        traversed tree (dict) with id as key
     """
     traversed_id = {}  
     #print('coords to id, traversed ', traversed) 
@@ -180,17 +254,32 @@ def coords_to_id(traversed):
     #print('coords to id, traversed_id ', traversed_id)
     return traversed_id
 
+
 def moment(x, Z):
-    """mean, rms, skew for a vel, Z part of the spectrum"""
+    """mean, rms, skew for a vel, Z part of the spectrum
+    
+    Args:
+        x: velocity of bin
+        Z: spectral reflectivity
+    Returns:
+        dict with v, width, skew
+    """
     mean = np.sum(x*Z)/np.sum(Z)
     rms = np.sqrt(np.sum(((x-mean)**2)*Z)/np.sum(Z))
     skew = np.sum(((x-mean)**3)*Z)/(np.sum(Z)*(rms**3))
     return {'v': mean, 'width': rms, 'skew': skew}
 
+
 #@profile
 def calc_moments(spectrum, bounds, thres):
-    """
-    calc the moments following the formulas given by Görsdorf2015 and Maahn2017
+    """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
+
+    Args:
+        spectrum: spectrum dict
+        bounds: boundaries (bin no)
+        thres: threshold used
+    Returns
+        moment, spectrum
     """
     Z = np.sum(spectrum['specZ'][bounds[0]:bounds[1]+1])
     # TODO add the masked pocessing for the moments
@@ -226,7 +315,6 @@ def calc_moments(spectrum, bounds, thres):
         ldr = np.nan
         ldrmax = np.nan
     
-
     # ldr calculation after the debugging session
     ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
     if not np.all(spectrum['specZcx_mask']):
@@ -235,8 +323,8 @@ def calc_moments(spectrum, bounds, thres):
         ldr2 = np.nan
 
     decoup = 10**(spectrum['decoupling']/10.)
-    print('ldr ', h.lin2z(ldr), ' ldrmax ', h.lin2z(ldrmax), 'new ldr ', h.lin2z(ldr2))
-    print('ldr ', h.lin2z(ldr-decoup), ' ldrmax ', h.lin2z(ldrmax-decoup), 'new ldr ', h.lin2z(ldr2-decoup))
+    #print('ldr ', h.lin2z(ldr), ' ldrmax ', h.lin2z(ldrmax), 'new ldr ', h.lin2z(ldr2))
+    #print('ldr without decoup', h.lin2z(ldr-decoup), ' ldrmax ', h.lin2z(ldrmax-decoup), 'new ldr ', h.lin2z(ldr2-decoup))
 
     # for i in range(spectrum['specZcx_validcx'].shape[0]):
     #     print(i, h.lin2z(np.array([spectrum['specZ'][i], spectrum['specZcx_validcx'][i], spectrum['specZ_validcx'][i]])), spectrum['specZcx_mask'][i])
@@ -251,82 +339,117 @@ def calc_moments(spectrum, bounds, thres):
 
     return moments, spectrum
 
-class peakTree():
-    """
-    -peak detection, tree generation
-    -tree compression
-    -product generation (payload: Z, v, width, LDR, skew, minv, maxv)
-    - drop minv maxv in favour of boundaries
-    """
 
-    #@profile
-    def get_from_spectrum(self, spectrum):
-        """
+
+def tree_from_spectrum(spectrum):
+    """generate the tree and return a traversed version
+
+    TODO: modify the interface from peakTree class to function
+
+    .. code-block:: python
 
         spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
             'specZ': specZ, 'noise_thres': specZ.min()}
-        :return : traversed
-        """
 
-        # for i in range(spectrum['specZ'].shape[0]):
-        #     if not spectrum['specZ'][i] == 0:
-        #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
-        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
-        peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
-        # filter all peaks with that are only 1 bin wide
-        peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
-        if peak_ind:
-            # print('peak ind at noise  level', peak_ind)
-            if len(peak_ind) == 0:
-                t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
-            else:
-                t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
-                for peak_pair in peak_pairs_to_call(peak_ind):
-                    # print('peak pair', peak_pair)
-                    t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+    Args:
+        spectrum (dict): spectra dict
+    Returns:
+        traversed tree
+    """
 
-            # minima only inside main peaks
-            #minima = get_minima(np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres']*1.1))
-            #minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
-            minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
-            for m in minima:
-                # print('minimum ', m)
-                if m[1]>spectrum['noise_thres']*1.1:
-                    t.add_min(m[0], m[1])
-                else:
-                    #print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
-                    pass
-            #print(t)
-            traversed = coords_to_id(list(traverse(t, [0])))
-            for i in traversed.keys():
-                if i == 0:
-                    moments, spectrum =  calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
-                else:
-                    moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
-                traversed[i].update(moments)
-                #print('traversed tree')
-                #print(i, traversed[i])
-
+    # for i in range(spectrum['specZ'].shape[0]):
+    #     if not spectrum['specZ'][i] == 0:
+    #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
+    masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
+    peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
+    # filter all peaks with that are only 1 bin wide
+    peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
+    if peak_ind:
+        # print('peak ind at noise  level', peak_ind)
+        if len(peak_ind) == 0:
+            t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
         else:
-            traversed = {}
-        return traversed
+            t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
+            for peak_pair in peak_pairs_to_call(peak_ind):
+                # print('peak pair', peak_pair)
+                t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+
+        # minima only inside main peaks
+        #minima = get_minima(np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres']*1.1))
+        #minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
+        minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
+        for m in minima:
+            # print('minimum ', m)
+            if m[1]>spectrum['noise_thres']*1.1:
+                t.add_min(m[0], m[1])
+            else:
+                #print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
+                pass
+        #print(t)
+        traversed = coords_to_id(list(traverse(t, [0])))
+        for i in traversed.keys():
+            #if i == 0:
+            #    moments, spectrum =  calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            #else:
+            moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            traversed[i].update(moments)
+            #print('traversed tree')
+            #print(i, traversed[i])
+
+        #new skewness split
+        chop = False
+        if chop:
+            nodes_with_min = list(traversed.keys())
+            all_parents = [n['parent_id'] for n in traversed.values()]
+            leafs = set(traversed.keys()) - set(all_parents)
+            nodes_to_split = [k for k,v in traversed.items() if k in leafs and np.abs(v['skew']) > 0.4]
+            print('all_parents ', all_parents, 'leafs ', leafs, ' nodes to split ', nodes_to_split)
+            calc_chop = lambda x: int(0.85*(x[1]-x[0])+x[0])
+            split_at = [calc_chop(traversed[k]['bounds']) for k in nodes_to_split]
+            print(split_at)
+            for s in split_at:
+                print('add min', s, masked_Z[s])
+                t.add_min(s, masked_Z[s], ignore_prom=True)
+            print(t)
+            traversed = coords_to_id(list(traverse(t, [0])))
+
+            for i in traversed.keys():
+                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+                traversed[i].update(moments)
+                if i in nodes_with_min:
+                    traversed[i]['chop'] = True
+            print(traversed)
+
+    else:
+        traversed = {}
+    return traversed
 
 
 def saveVar(dataset, varData, dtype=np.float32):
-    """
-    save a single variable to a dataset
-    * var_name (Z)
-    * dimension ( ('time', 'height') )
-    * arr (self.corr_refl_reg[:].filled())
-    * long_name ("Reflectivity factor")
-    * optional
-    * comment ("Wind profiler reflectivity factor corrected by cloud radar (only Bragg contribution)")
-    * units ("dBz")
-    * missing_value (-200.)
-    * plot_range ((-50., 20.))
-    * plot_scale ("linear")
-    """
+    """save an item to the dataset with data in a dict
 
+    Args:
+        dataset (:obj:netCDF4.Dataset): netcdf4 Dataset to add to
+        dtype: datatype of the array
+        varData (dict): data to add, for example:
+
+    ================== ======================================================
+     Key                Description
+    ================== ======================================================
+    ``var_name``        name of the variable
+    ``dimension``       ``('time', 'height')``
+    ``arr``             data
+    ``long_name``       descriptive long name
+    **optional**
+    ``comment``         description as a sentence
+    ``units``           string with units
+    ``units_html``      units in the html formatting
+    ``missing_value``   define missing value
+    ``plot_range``      tuple of range to plot
+    ``plot_scale``      "linear" or "log" 
+    ``axis``            
+    ================== ======================================================
+    """
     item = dataset.createVariable(varData['var_name'], dtype, varData['dimension'])
     item[:] = varData['arr']
     item.long_name = varData['long_name']
@@ -345,22 +468,39 @@ def saveVar(dataset, varData, dtype=np.float32):
     if 'axis' in varData.keys():
         item.axis = varData['axis']
 
+
 def get_git_hash():
+    """
+    Returns:
+        git describe string
+    """
     label = subprocess.check_output(['git', 'describe', '--always'])
     return label.rstrip()
 
 
 def time_index(timestamps, sel_ts):
+    """get the index of a timestamp in the list
+    
+    Args:
+        timestamps: array
+        sel_ts: timestamp whose index is required
+    """
     return np.where(timestamps == min(timestamps, key=lambda t: abs(sel_ts - t)))[0][0]
 
 
 def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
-    """
-    get the mapping from timestamp indices to gridded times
+    """get the mapping from timestamp indices to gridded times
     eg for use in interpolation routines
+
+    TODO link to gist
     
-    :filter_empty : include the bins that are empty
-    :returns : list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
+    Args:
+        timestamps: list of timestamps
+        ts_range: range fo the gridded timestamps
+        time_interval: interval of the gridded timestamps
+        filter_empty (bool, optional): include the bins that are empty
+    Returns:
+        list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
     """
     grid = np.arange(ts_range[0], ts_range[1]+1, time_interval)
     grid_mid = grid[:-1] + np.diff(grid)/2
@@ -378,10 +518,25 @@ def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
 
 
 class peakTreeBuffer():
-    """
-    -read write
-    -(time, height, node)
+    """trees for a time-height chunk
 
+    Args:
+        system (string): specify the system/campaign
+
+    The attribute setting may contain
+    
+    ==================== ========================================================
+     Key                  Description
+    ==================== ========================================================
+    ``decoupling``        decoupling of the crosschannel
+    ``smooth``            flag if smoothing should be applied
+    ``grid_time``         time in seconds to average the spectra
+    ``max_no_nodes``      number of nodes to save
+    ``thres_factor_co``   factor between noise_lvl and noise thres in co channel
+    ``thres_factor_cx``   factor between noise_lvl and noise thres in cross ch.
+    ``station_altitude``  height of station above msl
+    ==================== ========================================================
+    
     """
     def __init__(self, system="Lacros"):
         self.system = system
@@ -431,7 +586,11 @@ class peakTreeBuffer():
 
 
     def load_spec_file(self, filename):
-        """load spectra raw file"""
+        """load spectra from raw file
+        
+        Args:
+            filename: specify file
+        """
         self.type = 'spec'
 
         self.f = netCDF4.Dataset(filename, 'r')
@@ -449,7 +608,11 @@ class peakTreeBuffer():
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
     def load_peakTree_file(self, filename):
-        """load preprocessed peakTree file"""
+        """load preprocessed peakTree file
+     
+        Args:
+            filename: specify file
+        """
         self.type = 'peakTree'
         self.f = netCDF4.Dataset(filename, 'r')
         print('loaded file ', filename)
@@ -461,13 +624,18 @@ class peakTreeBuffer():
 
     #@profile
     def get_tree_at(self, sel_ts, sel_range, temporal_average=False, silent=False):
-        """
-        get the tree at specified time
-
+        """get a single tree
         either from the spectrum directly (prior call of load_spec_file())
         or from the pre-converted file (prior call of load_peakTree_file())
 
-        returns a dictionary with all nodes and the parameters of each node
+        Args:
+            sel_ts (tuple or float): either value or (index, value)
+            sel_range (tuple or float): either value or (index, value)
+            temporal_average (optional): aberage over the interval 
+                (tuple of bin in time dimension or number of seconds)
+            silent: verbose output
+        Returns:
+            dictionary with all nodes and the parameters of each node
         """
         if type(sel_ts) is tuple and type(sel_range) is tuple:
             it, sel_ts = sel_ts
@@ -562,19 +730,20 @@ class peakTreeBuffer():
 
             spectrum['decoupling'] = decoupling
             #                                     deep copy of dict 
-            travtree = peakTree().get_from_spectrum({**spectrum})
+            travtree = tree_from_spectrum({**spectrum})
 
             return travtree, spectrum
 
         elif self.type == 'peakTree':
             settings_file = ast.literal_eval(self.f.settings)
             self.settings['max_no_nodes'] = settings_file['max_no_nodes']
-            print('load tree from peakTree; no_nodes ', self.no_nodes[it,ir])
+            print('load tree from peakTree; no_nodes ', self.no_nodes[it,ir]) if not silent else None
             travtree = {}            
-            print('peakTree parent', self.f.variables['parent'][it,ir,:])
+            print('peakTree parent', self.f.variables['parent'][it,ir,:]) if not silent else None
 
-            avail_nodes = min(self.settings['max_no_nodes'], int(self.no_nodes[it, ir]))
-            for k in range(avail_nodes):
+            print(np.argwhere(~self.f.variables['parent'][it,ir,:].mask).ravel()) if not silent else None
+            avail_nodes = np.argwhere(~self.f.variables['parent'][it,ir,:].mask).ravel()
+            for k in avail_nodes.tolist():
                 #print('k', k)
                 #(['timestamp', 'range', 'Z', 'v', 'width', 'LDR', 'skew', 'minv', 'maxv', 'threshold', 'parent', 'no_nodes']
                 node = {'parent_id': int(np.asscalar(self.f.variables['parent'][it,ir,k])), 
@@ -602,12 +771,16 @@ class peakTreeBuffer():
                         # #print('parent_id', node['parent_id'], 'siblings ', siblings)
                         #node['coords'] = coords + [len(siblings)]
                     travtree[k] = node
-      
+
             return travtree, None
 
     #@profile
     def assemble_time_height(self, outdir):
-        """ convert a whole spectra file to the peakTree node file"""
+        """convert a whole spectra file to the peakTree node file
+        
+        Args:
+            outdir: directory for the output
+        """
         #self.timestamps = self.timestamps[:10]
 
         if self.settings['grid_time']:
@@ -646,9 +819,12 @@ class peakTreeBuffer():
                 else:
                     travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
 
-                no_nodes[it,ir] = len(list(travtree.keys()))
-                #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir])
-                for k in range(min(max_no_nodes, int(no_nodes[it,ir]))):
+
+                node_ids = list(travtree.keys())
+                nodes_to_save = [i for i in node_ids if i < max_no_nodes]
+                no_nodes[it,ir] = len(node_ids)
+                #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir], list(travtree.keys()))
+                for k in nodes_to_save:
                     if k in travtree.keys():
                         val = travtree[k]
                         #print(k,val)
@@ -758,22 +934,27 @@ class peakTreeBuffer():
                               'plot_scale': "linear"})
             
             saveVar(dataset, {'var_name': 'no_nodes', 'dimension': ('time', 'range'),
-                              'arr': no_nodes[:], 'long_name': "Number of detected nodes",
+                              'arr': no_nodes[:].copy(), 'long_name': "Number of detected nodes",
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
             
+            # TODO modifiable meta data
+
+            with open('output_meta.toml') as output_meta:
+                meta_info = toml.loads(output_meta.read())
 
             dataset.description = 'peakTree processing'
             dataset.location = self.location
-            dataset.institution = 'TROPOS'
-            dataset.contact = 'buehl@tropos.de or radenz@tropos.de'
+            dataset.institution = meta_info["institution"]
+            dataset.contact = meta_info["contact"]
             dataset.creation_time = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
             dataset.settings = str(self.settings)
             dataset.commit_id = get_git_hash()
             dataset.day = str(self.begin_dt.day)
             dataset.month = str(self.begin_dt.month)
             dataset.year = str(self.begin_dt.year)
+
 
     def __del__(self):
         if 'f' in list(self.__dict__):

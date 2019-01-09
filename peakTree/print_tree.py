@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 # coding=utf-8
 """
+output of visualized trees as text, plots and schematic graphs
+"""
+"""
 Author: radenz@tropos.de
-
-collection of tiny helper functions
-
 """
 
 import matplotlib
@@ -18,15 +18,25 @@ import json
 
 
 def coord_pattern_child(p):
-    """the coordinate pattern required for filtering the dictionary for children"""
+    """the coordinate pattern required for filtering the dictionary for children
+    for use in :func:`iterchilds`
+
+    Args:
+        p: coordinate of parent
+    Returns:
+        function that thest if a coordinate is a child of p
+    """
     return lambda d: d['coords'][:-1] == p and len(d['coords']) == len(p)+1
 
 
 def iterchilds(travtree, parentcoord):
-    """generator that yields all childs of a parent with given coordinats"""
+    """generator that yields all childs of a parent with given coordinats
+    for use in :func:`iternodes`
+    """
     for n in list(filter(coord_pattern_child(parentcoord), travtree.values())):
         yield n
         yield from iterchilds(travtree, n['coords'])
+
 
 def iternodes(travtree):
     """generator that yields a full traversal of the tree"""
@@ -36,8 +46,16 @@ def iternodes(travtree):
         yield n
         yield from iterchilds(travtree, n['coords'])
 
+
 def travtree2text(travtree, show_coordinats=True):
-    """returns a string with the tabular representation of the traversed tree"""
+    """returns a string with the tabular representation of the traversed tree
+    
+    Args:
+        travtree: traversed tree
+        show_coordinates (optional): include the coordinates
+    Returns:
+        string with line breaks
+    """
     lines = []
     levels = max(list(map(lambda v: len(v['coords']), travtree.values())))
     if show_coordinats:
@@ -67,7 +85,11 @@ def travtree2text(travtree, show_coordinats=True):
 
 
 def gen_lines_to_par(travtree):
-    """get all the connection lines between the nodes of travtree"""
+    """get all the connection lines between the nodes of travtree
+    
+    Returns:
+        list of coordinate pairs ``[(v,z), ..]``
+    """
     chunks = []
     for k,v in travtree.items():
         if v['parent_id'] != -1:
@@ -78,10 +100,14 @@ def gen_lines_to_par(travtree):
 
 
 def plot_spectrum(travtree, spectrum, savepath):
-    """
-    plot the spectrum together with the traversed tree
-    :savepath : path to save or None
-    :return : fig, ax
+    """plot the spectrum together with the traversed tree
+    
+    Args:
+        travtree: traversed tree
+        spectrum: spectrum dict
+        savepath: either ``None`` or string
+    Returns:
+        fig, ax
     """
     dt=h.ts_to_dt(spectrum['ts'])
 
@@ -140,6 +166,7 @@ def plot_spectrum(travtree, spectrum, savepath):
         fig.savefig(savepath + savename, dpi=250)
     return fig, ax
 
+
 def render_node_table(key, value):
     string = """{} [label=<<font face='helvetica' point-size="10"><table border="0" cellborder="0" cellspacing="0">
        <tr><td colspan='4'><font point-size='11'><B>node {}</B></font></td></tr>
@@ -148,6 +175,7 @@ def render_node_table(key, value):
      </table></font>>]""".format(key, key, h.lin2z(value['z']), value['width'], value['v'], h.lin2z(value['thres']))
     return string
 
+
 def render_node_bounds(key, value):
     string = """{} [label=<<font face='helvetica' point-size="11">
     <table border="0" cellborder="0" cellspacing="0">
@@ -155,7 +183,16 @@ def render_node_bounds(key, value):
     <tr><td>bin no {}-{}</td></tr></table></font>>]""".format(key, key, *value['bounds'])
     return string
 
+
 def dot_format(travtree, display="table"):
+    """generate a string for the graphviz dot format
+    
+    Args:
+        travtree: traversed tree
+        display: either ``table`` or ``bounds``
+    Returns:
+        a graphvis compatible definition string
+    """
     print('dot format travtree', travtree)
     if display == "table":
         node_props = [render_node_table(*elem) for elem in travtree.items()]
@@ -170,14 +207,15 @@ def dot_format(travtree, display="table"):
     #            + node_props + connections + ['}']
     return '\n'.join(string)
 
-def vis_tree(dot):
 
+def vis_tree(dot):
+    """visualize the dot string"""
     src = graphviz.Source(dot)
     return src
 
 
-
 def format_for_json(elem):
+    """json elementwise formatter"""
     if isinstance(elem, np.integer):
         return int(elem)
     elif isinstance(elem, np.floating):
@@ -191,7 +229,7 @@ def format_for_json(elem):
 
 
 def d3_format(travtree):
-
+    """format the traversed tree in a json compatible manner"""
     nodes = []
     for k, v in travtree.items():
         v['id'] = k
