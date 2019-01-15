@@ -13,7 +13,7 @@ import peakTree.VIS_Colormaps as VIS_Colormaps
 
 parser = argparse.ArgumentParser(description='Convert to the json')
 parser.add_argument('file', help='path of the netcdf file')
-parser.add_argument('output', help='name of the output file (inside the output folder)')
+parser.add_argument('output', help='name of the output json/js (inside the output folder)')
 parser.add_argument('--time-interval', type=str, default='0-max', help='time to convert. e.g. 0-400, 0-max, 500-max')
 parser.add_argument('--range-interval', type=str, default='0-350', help='range to convert. e.g. 0-7000, 0-max, 500-max')
 args = parser.parse_args()
@@ -47,9 +47,15 @@ def get_tree_region(pTB, it_range, ir_range):
                 v['bounds'] = list(map(int, v['bounds']))
                 if v['parent_id'] == -1:
                     del v['parent_id']
-                v['z'] =h.lin2z(v['z'])
-                v['ldr'] = h.lin2z(v['ldr']) if np.isfinite(h.lin2z(v['ldr'])) else -99
-                v['ldrmax'] = h.lin2z(v['ldrmax']) if np.isfinite(h.lin2z(v['ldrmax'])) else -99
+                v['z'] = h.lin2z(v['z'])
+                v['width'] = v['width'] if np.isfinite(v['width']) else -99
+                v['skew'] = v['skew'] if np.isfinite(v['skew']) else -99
+                if 'ldr' in v:
+                    v['ldr'] = h.lin2z(v['ldr']) if np.isfinite(h.lin2z(v['ldr'])) else -99
+                    v['ldrmax'] = h.lin2z(v['ldrmax']) if np.isfinite(h.lin2z(v['ldrmax'])) else -99
+                else:
+                    v['ldr'] = -99
+                    v['ldrmax'] = -99
                 v['thres'] = h.lin2z(v['thres'])
                 v = {ky: format_for_json(val) for ky, val in v.items()}
                 nodes.append(v)
@@ -91,11 +97,11 @@ range_interval = list(map(int, range_interval))
 
 json_data = get_tree_region(pTB, time_interval, range_interval)
 
-with open('output/20170629_0830_data' + '.json', 'w') as outfile:
+with open(args.output + '.json', 'w') as outfile:
     json_string = json.dumps(json_data)
     outfile.write(json_string)
 
-with open('output/20170629_0830_data' + '.js', 'w') as outfile:
+with open(args.output + '.js', 'w') as outfile:
     json_string = json.dumps(json_data)
     json_string = jsfunct + json_string + ";"
     outfile.write(json_string)

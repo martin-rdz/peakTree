@@ -9,6 +9,7 @@ Author: radenz@tropos.de
 
 import datetime
 import numpy as np
+from numba import jit
 
 
 def list_of_elem(elem, length):
@@ -49,3 +50,42 @@ def fill_with(array, mask, fill):
     filled = array.copy()
     filled[mask] = fill
     return filled
+
+
+def flatten(xs):
+    """flatten inhomogeneous deep lists
+    e.g. ``[[1,2,3],4,5,[6,[7,8],9],10]``
+    """
+    result = []
+    if isinstance(xs, (list, tuple)):
+        for x in xs:
+            result.extend(flatten(x))
+    else:
+        result.append(xs)
+    return result
+
+
+@jit
+def estimate_noise(spec, mov_avg=1):
+    """
+    Noise estimate based on Hildebrand and Sekhon (1974)
+    """
+    i_noise = len(spec)
+    spec_sort = np.sort(spec)
+    for i in range(spec_sort.shape[0]):
+        partial = spec_sort[:i+1]
+        mean = partial.mean()
+        var = partial.var()
+        if var * mov_avg * 2 < mean**2.:
+            i_noise = i
+        else:
+            # remaining part of spectrum has no noise characteristic
+            break
+    noise_part = spec_sort[:i_noise+1]
+    # case no signal above noise
+    noise_sep = spec_sort[i_noise] if i_noise < spec.shape[0] else np.mean(noise_part)
+
+    return {'noise_mean': np.mean(noise_part), 
+            'noise_sep': noise_sep,
+            'noise_var': np.var(noise_part), 
+            'no_noise_bins': i_noise}

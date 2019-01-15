@@ -16,7 +16,8 @@ import peakTree.VIS_Colormaps as VIS_Colormaps
 parser = argparse.ArgumentParser(description='Plot the peakTree converted files')
 parser.add_argument('file', help='path of the file')
 parser.add_argument('--no-nodes', type=int, default=0, help='plot nodes up to this no (including)')
-parser.add_argument('--range-interval', type=str, default='min-10000', help='range to plot. e.g. min-7000, min-max, 500-max')
+parser.add_argument('--range-interval', type=str, default='min,10000', help='range to plot. e.g. min,7000, min,max, 500,max')
+parser.add_argument('--time-interval', type=str, default='', help='range to plot. e.g. min,7000, min,max, 500,max')
 args = parser.parse_args()
 
 pTB = peakTree.peakTreeBuffer()
@@ -32,12 +33,27 @@ hrange = pTB.range
 no_nodes = pTB.f.variables['no_nodes'][:]
 
 plot_nodes = list(range(args.no_nodes + 1))
-plot_height_interval = args.range_interval.split('-')
+plot_height_interval = args.range_interval.split(',')
 if plot_height_interval[0] == "min":
     plot_height_interval[0] = hrange[0]
 if plot_height_interval[1] == "max":
     plot_height_interval[1] = hrange[-1]
 plot_height_interval = list(map(float, plot_height_interval))
+
+if args.time_interval != '':
+    print("time interval given")
+    plot_time_interval = args.time_interval.split(',')
+    if plot_time_interval[0] == "min":
+        plot_time_interval[0] = dt_list[0]
+    else:
+        plot_time_interval[0] = datetime.datetime.strptime(plot_time_interval[0], "%Y%m%d_%H%M")
+    if plot_time_interval[1] == "max":
+        plot_time_interval[1] = dt_list[-1]
+    else:
+        plot_time_interval[1] = datetime.datetime.strptime(plot_time_interval[1], "%Y%m%d_%H%M")
+else:
+    plot_time_interval = [dt_list[0], dt_list[-1]]
+print(plot_time_interval)
 
 
 fig, ax = plt.subplots(1, figsize=(10, 5.7))
@@ -49,7 +65,7 @@ pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
 cbar = fig.colorbar(pcmesh, ticks=[0, 1, 3, 5, 7, 9])
 #ax.set_xlim([dt_list[0], dt_list[-1]])
 #ax.set_ylim([height_list[0], height_list[-1]])
-ax.set_xlim([dt_list[0], dt_list[-1]])
+ax.set_xlim(plot_time_interval)
 #ax.set_ylim([hrange[0], hrange[-1]])
 ax.set_ylim(plot_height_interval)
 ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
@@ -88,7 +104,7 @@ for i in plot_nodes:
     cbar = fig.colorbar(pcmesh)
     #ax.set_xlim([dt_list[0], dt_list[-1]])
     #ax.set_ylim([height_list[0], height_list[-1]])
-    ax.set_xlim([dt_list[0], dt_list[-1]])
+    ax.set_xlim(plot_time_interval)
     #ax.set_ylim([hrange[0], hrange[-1]])
     #ax.set_ylim([hrange[0], 10000])
     ax.set_ylim(plot_height_interval)
@@ -124,7 +140,7 @@ for i in plot_nodes:
     cbar = fig.colorbar(pcmesh)
     #ax.set_xlim([dt_list[0], dt_list[-1]])
     #ax.set_ylim([height_list[0], height_list[-1]])
-    ax.set_xlim([dt_list[0], dt_list[-1]])
+    ax.set_xlim(plot_time_interval)
     #ax.set_ylim([hrange[0], hrange[-1]])
     #ax.set_ylim([hrange[0], 10000])
     ax.set_ylim(plot_height_interval)
@@ -150,76 +166,78 @@ for i in plot_nodes:
     savename = 'plots' + "/{}_velocity_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
     fig.savefig(savename, dpi=250)
 
-    ldrmax_node = pTB.f.variables['ldrmax'][:,:,i]
-    cmap = VIS_Colormaps.ldr_map
-    cmap = 'jet'
-    fig, ax = plt.subplots(1, figsize=(10, 5.7))
-    pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
-                        hrange,
-                        np.transpose(ldrmax_node),
-                        cmap=cmap, vmin=-36, vmax=0)
-    cbar = fig.colorbar(pcmesh)
-    #ax.set_xlim([dt_list[0], dt_list[-1]])
-    #ax.set_ylim([height_list[0], height_list[-1]])
-    ax.set_xlim([dt_list[0], dt_list[-1]])
-    #ax.set_ylim([hrange[0], hrange[-1]])
-    #ax.set_ylim([hrange[0], 10000])
-    ax.set_ylim(plot_height_interval)
-    ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
-    ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
-    cbar.ax.set_ylabel("LDRmax [dB]", fontweight='semibold', fontsize=15)
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
+    if 'ldrmax' in pTB.f.variables:
+        ldrmax_node = pTB.f.variables['ldrmax'][:,:,i]
+        cmap = VIS_Colormaps.ldr_map
+        cmap = 'jet'
+        fig, ax = plt.subplots(1, figsize=(10, 5.7))
+        pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
+                            hrange,
+                            np.transpose(ldrmax_node),
+                            cmap=cmap, vmin=-36, vmax=0)
+        cbar = fig.colorbar(pcmesh)
+        #ax.set_xlim([dt_list[0], dt_list[-1]])
+        #ax.set_ylim([height_list[0], height_list[-1]])
+        ax.set_xlim(plot_time_interval)
+        #ax.set_ylim([hrange[0], hrange[-1]])
+        #ax.set_ylim([hrange[0], 10000])
+        ax.set_ylim(plot_height_interval)
+        ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
+        ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
+        cbar.ax.set_ylabel("LDRmax [dB]", fontweight='semibold', fontsize=15)
+        ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
-    # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
-    # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
-    ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
-    ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
+        ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
-    ax.tick_params(axis='both', which='both', right=True, top=True)
-    ax.tick_params(axis='both', which='major', labelsize=14, 
-                width=3, length=5.5)
-    ax.tick_params(axis='both', which='minor', width=2, length=3)
-    cbar.ax.tick_params(axis='both', which='major', labelsize=14,
-                        width=2, length=4)
+        ax.tick_params(axis='both', which='both', right=True, top=True)
+        ax.tick_params(axis='both', which='major', labelsize=14, 
+                    width=3, length=5.5)
+        ax.tick_params(axis='both', which='minor', width=2, length=3)
+        cbar.ax.tick_params(axis='both', which='major', labelsize=14,
+                            width=2, length=4)
 
-    savename = 'plots' + "/{}_ldrmax_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
-    fig.savefig(savename, dpi=250)
+        savename = 'plots' + "/{}_ldrmax_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+        fig.savefig(savename, dpi=250)
 
-    ldr_node = pTB.f.variables['LDR'][:,:,i]
-    cmap = VIS_Colormaps.ldr_map
-    cmap = 'jet'
-    fig, ax = plt.subplots(1, figsize=(10, 5.7))
-    pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
-                        hrange,
-                        np.transpose(ldr_node),
-                        cmap=cmap, vmin=-36, vmax=0)
-    cbar = fig.colorbar(pcmesh)
-    #ax.set_xlim([dt_list[0], dt_list[-1]])
-    #ax.set_ylim([height_list[0], height_list[-1]])
-    ax.set_xlim([dt_list[0], dt_list[-1]])
-    #ax.set_ylim([hrange[0], hrange[-1]])
-    #ax.set_ylim([hrange[0], 10000])
-    ax.set_ylim(plot_height_interval)
-    ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
-    ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
-    cbar.ax.set_ylabel("LDR [dB]", fontweight='semibold', fontsize=15)
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
+    if "LDR" in pTB.f.variables:
+        ldr_node = pTB.f.variables['LDR'][:,:,i]
+        cmap = VIS_Colormaps.ldr_map
+        cmap = 'jet'
+        fig, ax = plt.subplots(1, figsize=(10, 5.7))
+        pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
+                            hrange,
+                            np.transpose(ldr_node),
+                            cmap=cmap, vmin=-36, vmax=0)
+        cbar = fig.colorbar(pcmesh)
+        #ax.set_xlim([dt_list[0], dt_list[-1]])
+        #ax.set_ylim([height_list[0], height_list[-1]])
+        ax.set_xlim(plot_time_interval)
+        #ax.set_ylim([hrange[0], hrange[-1]])
+        #ax.set_ylim([hrange[0], 10000])
+        ax.set_ylim(plot_height_interval)
+        ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
+        ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
+        cbar.ax.set_ylabel("LDR [dB]", fontweight='semibold', fontsize=15)
+        ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
-    # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
-    # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
-    ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
-    ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
+        ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
-    ax.tick_params(axis='both', which='both', right=True, top=True)
-    ax.tick_params(axis='both', which='major', labelsize=14, 
-                width=3, length=5.5)
-    ax.tick_params(axis='both', which='minor', width=2, length=3)
-    cbar.ax.tick_params(axis='both', which='major', labelsize=14,
-                        width=2, length=4)
+        ax.tick_params(axis='both', which='both', right=True, top=True)
+        ax.tick_params(axis='both', which='major', labelsize=14, 
+                    width=3, length=5.5)
+        ax.tick_params(axis='both', which='minor', width=2, length=3)
+        cbar.ax.tick_params(axis='both', which='major', labelsize=14,
+                            width=2, length=4)
 
-    savename = 'plots' + "/{}_ldr_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
-    fig.savefig(savename, dpi=250)
+        savename = 'plots' + "/{}_ldr_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+        fig.savefig(savename, dpi=250)

@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import helpers as h
 from . import print_tree
+import toml
 
 log = logging.getLogger(__name__)
 # log.setLevel(logging.DEBUG)
@@ -341,10 +342,36 @@ def calc_moments(spectrum, bounds, thres):
 
 
 
+def calc_moments_wo_LDR(spectrum, bounds, thres):
+    """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
+
+    Args:
+        spectrum: spectrum dict
+        bounds: boundaries (bin no)
+        thres: threshold used
+    Returns
+        moment, spectrum
+    """
+    Z = np.sum(spectrum['specZ'][bounds[0]:bounds[1]+1])
+    masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
+    masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
+    moments = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    
+    ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+
+    prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
+    prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
+    moments['prominence'] = prominence if not prominence_mask else 1e-99
+    moments['z'] = Z
+    moments['ldr'] = 0.0
+    moments['ldr'] = 0.0
+    moments['ldrmax'] = 0.0
+    return moments, spectrum
+
+
+
 def tree_from_spectrum(spectrum):
     """generate the tree and return a traversed version
-
-    TODO: modify the interface from peakTree class to function
 
     .. code-block:: python
 
@@ -391,10 +418,14 @@ def tree_from_spectrum(spectrum):
             #if i == 0:
             #    moments, spectrum =  calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             #else:
-            moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            if 'specZcx' in spectrum:
+                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            else:
+                moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             traversed[i].update(moments)
             #print('traversed tree')
             #print(i, traversed[i])
+        #print(print_tree.travtree2text(traversed))
 
         #new skewness split
         chop = False
@@ -547,6 +578,7 @@ class peakTreeBuffer():
                             'max_no_nodes': 15,
                             'thres_factor_co': 3.0,
                             'thres_factor_cx': 3.0,
+                            'LDR?': True,
                             'station_altitude': 12}
             self.location = 'Limassol'
             self.shortname = "Lim"
@@ -558,6 +590,7 @@ class peakTreeBuffer():
         # TODO try with a smaller factor noise threshold is good with this dataset
                             'thres_factor_co': 1.2,
                             'thres_factor_cx': 1.2,
+                            'LDR?': True,
                             'station_altitude': 12}
             self.location = 'Cabauw'
             self.shortname = "Cab"
@@ -568,6 +601,7 @@ class peakTreeBuffer():
                             'max_no_nodes': 15,
                             'thres_factor_co': 3.0,
                             'thres_factor_cx': 3.0,
+                            'LDR?': True,
                             'station_altitude': 12}
             self.location = 'Polarstern'
             self.shortname = "Pol"
@@ -578,6 +612,7 @@ class peakTreeBuffer():
                             'max_no_nodes': 15,
                             'thres_factor_co': 3.0,
                             'thres_factor_cx': 3.0,
+                            'LDR?': True,
                             'station_altitude': 100}
             self.location = 'Lindenberg'
             self.shortname = "Lin"
@@ -670,7 +705,7 @@ class peakTreeBuffer():
                 specZcx_mask = np.logical_or(specZ_mask, specLDR_mask)
                 specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
                 specSNRco_mask = specSNRco == 0.
-                no_averages = 0
+                no_averages = 1
             else: 
                 specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
                 no_averages = specZ.shape[1]
@@ -748,16 +783,19 @@ class peakTreeBuffer():
                 #(['timestamp', 'range', 'Z', 'v', 'width', 'LDR', 'skew', 'minv', 'maxv', 'threshold', 'parent', 'no_nodes']
                 node = {'parent_id': int(np.asscalar(self.f.variables['parent'][it,ir,k])), 
                         'thres': h.z2lin(np.asscalar(self.f.variables['threshold'][it,ir,k])), 
-                        'ldr': h.z2lin(np.asscalar(self.f.variables['LDR'][it,ir,k])), 
                         'width': np.asscalar(self.f.variables['width'][it,ir,k]), 
                         #'bounds': self.f.variables[''][it,ir], 
                         'z': h.z2lin(np.asscalar(self.f.variables['Z'][it,ir,k])), 
                         'bounds': (np.asscalar(self.f.variables['bound_l'][it,ir,k]), np.asscalar(self.f.variables['bound_r'][it,ir,k])),
                         #'coords': [0], 
-                        'skew': np.asscalar(self.f.variables['skew'][it,ir,k]), 
-                        'ldrmax': h.z2lin(np.asscalar(self.f.variables['ldrmax'][it,ir,k])),
+                        'skew': np.asscalar(self.f.variables['skew'][it,ir,k]),
                         'prominence': h.z2lin(np.asscalar(self.f.variables['prominence'][it,ir,k])),
                         'v': np.asscalar(self.f.variables['v'][it,ir,k])}
+                if 'LDR' in self.f.variables.keys():
+                    node['ldr'] = h.z2lin(np.asscalar(self.f.variables['LDR'][it,ir,k]))
+                    node['ldrmax'] =  h.z2lin(np.asscalar(self.f.variables['ldrmax'][it,ir,k]))
+                else:
+                    node['ldr'], node['ldrmax'] = -99, -99
                 if node['parent_id'] != -999:
                     if k == 0:
                         node['coords'] = [0]
@@ -813,6 +851,7 @@ class peakTreeBuffer():
                 print("temp_avg", temp_avg)
 
             for ir, rg in enumerate(self.range[:]):
+                print(h.ts_to_dt(timestamps_grid[it]), ir, rg)
                 #travtree, _ = self.get_tree_at(ts, rg, silent=True)
                 if self.settings['grid_time']:
                     travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
@@ -876,9 +915,6 @@ class peakTreeBuffer():
             vel[:] = self.velocity.astype(np.float32)
             vel.long_name = 'velocity [m/s]'
 
-            saveVar(dataset, {'var_name': 'decoupling', 'dimension': ('mode'),
-                             'arr':  self.settings['decoupling'], 'long_name': "LDR decoupling",
-                             'units': "dB", 'missing_value': -999.})
             saveVar(dataset, {'var_name': 'Z', 'dimension': ('time', 'range', 'nodes'),
                               'arr': Z[:], 'long_name': "Reflectivity factor",
                               #'comment': "",
@@ -893,11 +929,6 @@ class peakTreeBuffer():
                               'arr': width[:], 'long_name': "Spectral width",
                               #'comment': "Reflectivity",
                               'units': "m s-1", 'missing_value': -999., 'plot_range': (0.01, 3),
-                              'plot_scale': "linear"})
-            saveVar(dataset, {'var_name': 'LDR', 'dimension': ('time', 'range', 'nodes'),
-                              'arr': LDR[:], 'long_name': "Linear depolarization ratio",
-                              #'comment': "",
-                              'units': "dB", 'missing_value': -999., 'plot_range': (-25., 0.),
                               'plot_scale': "linear"})
             saveVar(dataset, {'var_name': 'skew', 'dimension': ('time', 'range', 'nodes'),
                               'arr': skew[:], 'long_name': "Skewness",
@@ -922,11 +953,20 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
-            saveVar(dataset, {'var_name': 'ldrmax', 'dimension': ('time', 'range', 'nodes'),
-                              'arr': ldrmax[:], 'long_name': "Maximum LDR from SNR",
-                              #'comment': "",
-                              'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
-                              'plot_scale': "linear"})
+            if self.settings['LDR?']:
+                saveVar(dataset, {'var_name': 'decoupling', 'dimension': ('mode'),
+                                'arr':  self.settings['decoupling'], 'long_name': "LDR decoupling",
+                                'units': "dB", 'missing_value': -999.})
+                saveVar(dataset, {'var_name': 'LDR', 'dimension': ('time', 'range', 'nodes'),
+                                'arr': LDR[:], 'long_name': "Linear depolarization ratio",
+                                #'comment': "",
+                                'units': "dB", 'missing_value': -999., 'plot_range': (-25., 0.),
+                                'plot_scale': "linear"})
+                saveVar(dataset, {'var_name': 'ldrmax', 'dimension': ('time', 'range', 'nodes'),
+                                'arr': ldrmax[:], 'long_name': "Maximum LDR from SNR",
+                                #'comment': "",
+                                'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                                'plot_scale': "linear"})
             saveVar(dataset, {'var_name': 'prominence', 'dimension': ('time', 'range', 'nodes'),
                               'arr': prominence[:], 'long_name': "Prominence of Peak above threshold",
                               #'comment': "",
@@ -938,8 +978,6 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
-            
-            # TODO modifiable meta data
 
             with open('output_meta.toml') as output_meta:
                 meta_info = toml.loads(output_meta.read())
