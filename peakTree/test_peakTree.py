@@ -99,7 +99,7 @@ def test_tree_generation():
     for fname in os.listdir(path):
         with open(path+fname, 'rb') as f:
             data = pickle.load(f)
-            tree = pT.peakTree().get_from_spectrum(data['spectrum'], False)
+            tree = pT.tree_from_spectrum(data['spectrum'])
             for var in ['bounds', 'coords']:
                  assert [node[var] for node in data['tree'].values()] == [node[var] for node in tree.values()]
 

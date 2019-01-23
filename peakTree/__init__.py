@@ -650,8 +650,8 @@ class peakTreeBuffer():
         """
         self.type = 'peakTree'
         self.f = netCDF4.Dataset(filename, 'r')
-        print('loaded file ', filename)
-        print('keys ', self.f.variables.keys())
+        log.info('loaded file {}'.format(filename))
+        log.info('keys {}'.format(self.f.variables.keys()))
         self.timestamps = self.f.variables['timestamp'][:]
         self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
         self.range = self.f.variables['range'][:]
@@ -678,7 +678,7 @@ class peakTreeBuffer():
         else:
             it = time_index(self.timestamps, sel_ts)
             ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0][0]
-        print('time ', it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], 'height', ir, self.range[ir]) if not silent else None
+        log.info('time {} {} {} height {} {}'.format(it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], ir, self.range[ir])) if not silent else None
         assert np.abs(sel_ts - self.timestamps[it]) < self.delta_ts, 'timestamps more than '+str(self.delta_ts)+'s apart'
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
 
@@ -688,7 +688,7 @@ class peakTreeBuffer():
             it_b = time_index(self.timestamps, sel_ts-temporal_average/2.)
             it_e = time_index(self.timestamps, sel_ts+temporal_average/2.)
             assert self.timestamps[it_e] - self.timestamps[it_b] < 15, 'found averaging range too large'
-            print('timerange ', it_b, h.ts_to_dt(self.timestamps[it_b]), it_e, h.ts_to_dt(self.timestamps[it_e])) if not silent else None
+            log.debug('timerange {} {} {} {}'.format(it_b, h.ts_to_dt(self.timestamps[it_b]), it_e, h.ts_to_dt(self.timestamps[it_e]))) if not silent else None
 
         if self.type == 'spec':
             decoupling = self.settings['decoupling']
@@ -772,11 +772,10 @@ class peakTreeBuffer():
         elif self.type == 'peakTree':
             settings_file = ast.literal_eval(self.f.settings)
             self.settings['max_no_nodes'] = settings_file['max_no_nodes']
-            print('load tree from peakTree; no_nodes ', self.no_nodes[it,ir]) if not silent else None
+            log.info('load tree from peakTree; no_nodes {}'.format(self.no_nodes[it,ir])) if not silent else None
             travtree = {}            
-            print('peakTree parent', self.f.variables['parent'][it,ir,:]) if not silent else None
+            log.debug('peakTree parent {}'.format(self.f.variables['parent'][it,ir,:])) if not silent else None
 
-            print(np.argwhere(~self.f.variables['parent'][it,ir,:].mask).ravel()) if not silent else None
             avail_nodes = np.argwhere(~self.f.variables['parent'][it,ir,:].mask).ravel()
             for k in avail_nodes.tolist():
                 #print('k', k)
@@ -843,15 +842,15 @@ class peakTreeBuffer():
         no_nodes = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
 
         for it, ts in enumerate(timestamps_grid[:]):
-            print('it, ts', it, ts)
+            log.info('it {:5d} ts {}'.format(it, ts))
             it_radar = time_index(self.timestamps, ts)
-            print('time ', it, h.ts_to_dt(timestamps_grid[it]), timestamps_grid[it], 'radar ', h.ts_to_dt(self.timestamps[it_radar]), self.timestamps[it_radar])
+            log.debug('time {} {} {} radar {} {}'.format(it, h.ts_to_dt(timestamps_grid[it]), timestamps_grid[it], h.ts_to_dt(self.timestamps[it_radar]), self.timestamps[it_radar]))
             if self.settings['grid_time']:
                 temp_avg = time_grid[3][it], time_grid[4][it]
-                print("temp_avg", temp_avg)
+                log.debug("temp_avg {}".format(temp_avg))
 
             for ir, rg in enumerate(self.range[:]):
-                print(h.ts_to_dt(timestamps_grid[it]), ir, rg)
+                log.debug("current iteration {} {} {}".format(h.ts_to_dt(timestamps_grid[it]), ir, rg))
                 #travtree, _ = self.get_tree_at(ts, rg, silent=True)
                 if self.settings['grid_time']:
                     travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
@@ -881,7 +880,7 @@ class peakTreeBuffer():
 
         filename = outdir + '{}_{}_peakTree.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'),
                                                         self.shortname)
-        print('output filename ', filename)
+        log.info('output filename {}'.format(filename))
         
         with netCDF4.Dataset(filename, 'w', format='NETCDF4') as dataset:
             dim_time = dataset.createDimension('time', Z.shape[0])
