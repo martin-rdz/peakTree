@@ -330,7 +330,7 @@ def calc_moments(spectrum, bounds, thres):
     # for i in range(spectrum['specZcx_validcx'].shape[0]):
     #     print(i, h.lin2z(np.array([spectrum['specZ'][i], spectrum['specZcx_validcx'][i], spectrum['specZ_validcx'][i]])), spectrum['specZcx_mask'][i])
 
-    moments['ldr'] = ldr
+    #moments['ldr'] = ldr
     moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
     #moments['ldr'] = ldr2-decoup
     moments['ldrmax'] = ldrmax
@@ -571,51 +571,14 @@ class peakTreeBuffer():
     """
     def __init__(self, system="Lacros"):
         self.system = system
-        if system == "Lacros":
-            self.settings = {'decoupling': -30,
-                            'smooth': True,
-                            'grid_time': 6,
-                            'max_no_nodes': 15,
-                            'thres_factor_co': 3.0,
-                            'thres_factor_cx': 3.0,
-                            'LDR?': True,
-                            'station_altitude': 12}
-            self.location = 'Limassol'
-            self.shortname = "Lim"
-        elif system == "Lacros_at_ACCEPT":
-            self.settings = {'decoupling': -30,
-                            'smooth': True,
-                            'grid_time': 5,
-                            'max_no_nodes': 15,
-        # TODO try with a smaller factor noise threshold is good with this dataset
-                            'thres_factor_co': 1.2,
-                            'thres_factor_cx': 1.2,
-                            'LDR?': True,
-                            'station_altitude': 12}
-            self.location = 'Cabauw'
-            self.shortname = "Cab"
-        elif system == "Polarstern":
-            self.settings = {'decoupling': -27,
-                            'smooth': True,
-                            'grid_time': 10,
-                            'max_no_nodes': 15,
-                            'thres_factor_co': 3.0,
-                            'thres_factor_cx': 3.0,
-                            'LDR?': True,
-                            'station_altitude': 12}
-            self.location = 'Polarstern'
-            self.shortname = "Pol"
-        elif system == "Lindenberg":
-            self.settings = {'decoupling': -25,
-                            'smooth': True,
-                            'grid_time': False,
-                            'max_no_nodes': 15,
-                            'thres_factor_co': 3.0,
-                            'thres_factor_cx': 3.0,
-                            'LDR?': True,
-                            'station_altitude': 100}
-            self.location = 'Lindenberg'
-            self.shortname = "Lin"
+
+        with open('instrument_config.toml') as config_file:
+            config = toml.loads(config_file.read())
+
+        if system in config:
+            self.settings = config[system]["settings"]
+            self.location  =config[system]["location"]
+            self.shortname = config[system]["shortname"]
         else:
             raise ValueError('no system defined')
 
@@ -952,7 +915,7 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
-            if self.settings['LDR?']:
+            if self.settings['LDR']:
                 saveVar(dataset, {'var_name': 'decoupling', 'dimension': ('mode'),
                                 'arr':  self.settings['decoupling'], 'long_name': "LDR decoupling",
                                 'units': "dB", 'missing_value': -999.})

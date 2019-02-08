@@ -1,0 +1,53 @@
+[Lacros]
+    location = "Limassol"
+    shortname = "Lim"
+[Lacros.settings]
+    decoupling = -30
+    smooth = true
+    grid_time = 6
+    max_no_nodes = 15
+    thres_factor_co = 3.0
+    thres_factor_cx = 3.0
+    LDR = true
+    station_altitude = 12
+
+
+[Lacros_at_ACCEPT]
+    location = "Cabauw"
+    shortname = "Cab"
+[Lacros_at_ACCEPT.settings]
+    decoupling = -30
+    smooth = true
+    grid_time = 5
+    max_no_nodes = 15
+    thres_factor_co = 1.2
+    thres_factor_cx = 1.2
+    LDR = true
+    station_altitude = 12
+
+
+[Polarstern]
+    location = "Polarstern"
+    shortname = "Pol"
+[Polarstern.settings]
+    decoupling = -27
+    smooth = true
+    grid_time = 10
+    max_no_nodes = 15
+    thres_factor_co = 3.0
+    thres_factor_cx = 3.0
+    LDR = true
+    station_altitude = 12
+
+[Lindenberg]
+    location = "Lindenberg"
+    shortname = "Lin"
+[Lindenberg.settings]
+    decoupling = -25
+    smooth = true
+    grid_time = false
+    max_no_nodes = 15
+    thres_factor_co = 3.0
+    thres_factor_cx = 3.0
+    LDR = true
+    station_altitude = 100
