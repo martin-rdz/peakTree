@@ -35,13 +35,14 @@ def format_for_json(elem):
 def get_tree_region(pTB, it_range, ir_range):
     temp_avg = 10
     trees = {}
+    var = np.empty((it_range[1]-it_range[0], ir_range[1]-ir_range[0]), dtype=object)
     for it in range(*it_range):
         print('time step ', it, ' from ', it_range)
         for ir in range(*ir_range):
             #print('it',it, it-it_range[0], 'ir', ir, ".ir", ir_range[1]-ir-1, pTB.range[ir])
             travtree, _ = pTB.get_tree_at((it, pTB.timestamps[it]), (ir, pTB.range[ir]), 
-                                          temporal_average=temp_avg, silent=True)
-            nodes = []
+                                          silent=True)
+            nodes = {}
             for k, v in travtree.items():
                 v['id'] = k
                 v['bounds'] = list(map(int, v['bounds']))
@@ -58,14 +59,15 @@ def get_tree_region(pTB, it_range, ir_range):
                     v['ldrmax'] = -99
                 v['thres'] = h.lin2z(v['thres'])
                 v = {ky: format_for_json(val) for ky, val in v.items()}
-                nodes.append(v)
+                nodes[k] = v
                 
-            k = '{:0>2d}.{:0>2d}'.format(it-it_range[0], ir_range[1]-ir-1)
-            trees[k] = nodes
+            #k = '{:0>2d}.{:0>2d}'.format(it-it_range[0], ir_range[1]-ir-1)
+            #trees[k] = nodes
+            var[it,ir] = nodes
 
     timestamps = pTB.timestamps[it_range[0]:it_range[1]]
     print(pTB.range[ir_range[0]], pTB.range[ir_range[1]])
-    ranges = pTB.range[ir_range[0]:ir_range[1]][::-1]
+    ranges = pTB.range[ir_range[0]:ir_range[1]]
     print("ranges ", ranges)
 
     meta = {}
@@ -74,9 +76,9 @@ def get_tree_region(pTB, it_range, ir_range):
     meta['json_timeinterval'] = it_range
     meta['json_rangeinterval'] = ir_range
 
-    return {'timestamps': format_for_json(timestamps), 'ranges': format_for_json(ranges), 
-            'trees':trees,
-            "meta": meta}
+    return {'ts': format_for_json(timestamps), 'rg': format_for_json(ranges), 
+            'var': var.tolist(), 'dimlabel': ['time', 'range', 'tree'],
+            'paraminfo': meta}
 
 
 pTB = peakTree.peakTreeBuffer()
@@ -97,11 +99,11 @@ range_interval = list(map(int, range_interval))
 
 json_data = get_tree_region(pTB, time_interval, range_interval)
 
-with open(args.output + '.json', 'w') as outfile:
+with open(args.output + '_container.json', 'w') as outfile:
     json_string = json.dumps(json_data)
     outfile.write(json_string)
 
-with open(args.output + '.js', 'w') as outfile:
+with open(args.output + '_container.js', 'w') as outfile:
     json_string = json.dumps(json_data)
     json_string = jsfunct + json_string + ";"
     outfile.write(json_string)

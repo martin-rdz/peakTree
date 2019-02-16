@@ -55,14 +55,22 @@ else:
     plot_time_interval = [dt_list[0], dt_list[-1]]
 print(plot_time_interval)
 
+# use a categorial colormap for the no of nodes
+#cat_cmap = plt.cm.get_cmap('terrain_r', 6)
+cat_cmap = matplotlib.colors.ListedColormap(
+    ["#ffffff", "#cdbfbc", "#987b61", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
+# We must be sure to specify the ticks matching our target names
+labels = {0: '0', 1: "1", 2: "3", 3: "5", 4: "7", 5: "9"}
+cbarformatter = plt.FuncFormatter(lambda val, loc: labels[val])
+no_nodes_plot = np.ceil(np.array(no_nodes)/2.)
 
 fig, ax = plt.subplots(1, figsize=(10, 5.7))
 pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
                        hrange,
-                       np.transpose(no_nodes),
-                       cmap='terrain_r', vmin=0, vmax=10)
+                       np.transpose(no_nodes_plot),
+                       cmap=cat_cmap, vmin=-0.5, vmax=5.5)
 #cbar = fig.colorbar(pcmesh)
-cbar = fig.colorbar(pcmesh, ticks=[0, 1, 3, 5, 7, 9])
+cbar = fig.colorbar(pcmesh, ticks=[0, 1, 2, 3, 4, 5], format=cbarformatter)
 #ax.set_xlim([dt_list[0], dt_list[-1]])
 #ax.set_ylim([height_list[0], height_list[-1]])
 ax.set_xlim(plot_time_interval)

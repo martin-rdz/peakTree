@@ -121,7 +121,7 @@ class Node():
         self.threshold = noise_thres
         self.spec = spec_chunk
         self.prom_filter = 1.
-        # TODO prominence filter to 2dB (Shupe 2004) or even 6 (Williams 2018)
+        # prominence filter  2dB (Shupe 2004) or even 6 (Williams 2018)
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
     def add_noise_sep(self, bounds_left, bounds_right, thres):

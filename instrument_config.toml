@@ -25,6 +25,19 @@
     LDR = true
     station_altitude = 12
 
+[Lacros_Pun]
+    location = "Punta Arenas"
+    shortname = "Pun"
+[Lacros_Pun.settings]
+    decoupling = -30
+    smooth = true
+    grid_time = 6
+    max_no_nodes = 15
+    thres_factor_co = 3.0
+    thres_factor_cx = 3.0
+    LDR = true
+    station_altitude = 9
+
 
 [Polarstern]
     location = "Polarstern"
