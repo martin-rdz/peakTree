@@ -1,7 +1,8 @@
 # peakTree
-Software for converting multi-peaked (cloud) radar Doppler spectra into a binary tree structure.
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.2577387.svg)](https://doi.org/10.5281/zenodo.2577387)
+
+Software for converting multi-peaked (cloud) radar Doppler spectra into a binary tree structure.
 
 Technical documentation is available at [peakTree-doc](https://martin-rdz.github.io/peakTree-doc/)
 
