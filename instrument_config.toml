@@ -31,9 +31,9 @@
 [Lacros_Pun.settings]
     decoupling = -30
     smooth = true
-    grid_time = 6
+    grid_time = 10
     max_no_nodes = 15
-    thres_factor_co = 3.0
+    thres_factor_co = 6.0 # supress spurious peaks introduced by tails
     thres_factor_cx = 3.0
     LDR = true
     station_altitude = 9

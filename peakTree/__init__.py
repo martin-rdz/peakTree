@@ -272,7 +272,7 @@ def moment(x, Z):
 
 
 #@profile
-def calc_moments(spectrum, bounds, thres):
+def calc_moments(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
     Args:
@@ -286,7 +286,12 @@ def calc_moments(spectrum, bounds, thres):
     # TODO add the masked pocessing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
-    masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
+    if not no_cut:
+        masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
+    else:
+        masked_Z[:bounds[0]] = 0.0
+        masked_Z[bounds[1]+1:] = 0.0
+
     moments = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
     
     #spectrum['specZco'] = spectrum['specZ']/(1+spectrum['specLDR'])
@@ -420,6 +425,8 @@ def tree_from_spectrum(spectrum):
             #else:
             if 'specZcx' in spectrum:
                 moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            #    alt_moms, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'], no_cut=True)
+            #    print(traversed[i]['bounds'], alt_moms)
             else:
                 moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             traversed[i].update(moments)
@@ -481,8 +488,9 @@ def saveVar(dataset, varData, dtype=np.float32):
     ``axis``            
     ================== ======================================================
     """
-    item = dataset.createVariable(varData['var_name'], dtype, varData['dimension'])
-    item[:] = varData['arr']
+    item = dataset.createVariable(varData['var_name'], dtype, 
+            varData['dimension'], zlib=True, fill_value=varData['missing_value'])
+    item[:] = np.ma.masked_less(varData['arr'], -990.)
     item.long_name = varData['long_name']
     if 'comment' in varData.keys():
         item.comment = varData['comment']
@@ -569,15 +577,15 @@ class peakTreeBuffer():
     ==================== ========================================================
     
     """
-    def __init__(self, system="Lacros"):
+    def __init__(self, config_file='instrument_config.toml', system="Lacros"):
         self.system = system
 
-        with open('instrument_config.toml') as config_file:
-            config = toml.loads(config_file.read())
+        with open(config_file) as cf:
+            config = toml.loads(cf.read())
 
         if system in config:
             self.settings = config[system]["settings"]
-            self.location  =config[system]["location"]
+            self.location = config[system]["location"]
             self.shortname = config[system]["shortname"]
         else:
             raise ValueError('no system defined')
