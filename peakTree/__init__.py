@@ -255,7 +255,6 @@ def coords_to_id(traversed):
     #print('coords to id, traversed_id ', traversed_id)
     return traversed_id
 
-
 def moment(x, Z):
     """mean, rms, skew for a vel, Z part of the spectrum
     
@@ -374,7 +373,7 @@ def calc_moments_wo_LDR(spectrum, bounds, thres):
     return moments, spectrum
 
 
-
+#@profile
 def tree_from_spectrum(spectrum):
     """generate the tree and return a traversed version
 
@@ -531,7 +530,7 @@ def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
     """get the mapping from timestamp indices to gridded times
     eg for use in interpolation routines
 
-    TODO link to gist
+    https://gist.github.com/martin-rdz/b7c3b9f06bb41aeb6b2fb6c888275e26
     
     Args:
         timestamps: list of timestamps
@@ -589,6 +588,7 @@ class peakTreeBuffer():
             self.shortname = config[system]["shortname"]
         else:
             raise ValueError('no system defined')
+        self.spectra_in_ram = False
 
 
     def load_spec_file(self, filename):
@@ -613,6 +613,7 @@ class peakTreeBuffer():
 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
+
     def load_peakTree_file(self, filename):
         """load preprocessed peakTree file
      
@@ -629,7 +630,7 @@ class peakTreeBuffer():
         self.no_nodes = self.f.variables['no_nodes'][:]
 
     #@profile
-    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, silent=False):
+    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, roll_velocity=False, silent=False):
         """get a single tree
         either from the spectrum directly (prior call of load_spec_file())
         or from the pre-converted file (prior call of load_peakTree_file())
@@ -639,6 +640,8 @@ class peakTreeBuffer():
             sel_range (tuple or float): either value or (index, value)
             temporal_average (optional): aberage over the interval 
                 (tuple of bin in time dimension or number of seconds)
+            roll_velocity (optional): shift the x rightmost bins to the
+                left 
             silent: verbose output
         Returns:
             dictionary with all nodes and the parameters of each node
@@ -667,45 +670,68 @@ class peakTreeBuffer():
             # why is ravel necessary here?
             # flatten seems to faster
             if not temporal_average:
-                specZ = self.f.variables['Z'][:,ir,it].ravel()
+                if self.spectra_in_ram:
+                    specZ = self.Z[:,ir,it].ravel()
+                    specLDR = self.LDR[:,ir,it].ravel()
+                    specSNRco = self.SNRco[:,ir,it].ravel()
+                else:
+                    specZ = self.f.variables['Z'][:,ir,it].ravel()
+                    specLDR = self.f.variables['LDR'][:,ir,it].ravel()
+                    specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
                 specZ_mask = specZ == 0.
                 #print('specZ.shape', specZ.shape, specZ)
-                specLDR = self.f.variables['LDR'][:,ir,it].ravel()
+                
                 specLDR_mask = np.isnan(specLDR)
                 specZcx = specZ*specLDR
                 specZcx_mask = np.logical_or(specZ_mask, specLDR_mask)
-                specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
+                
                 specSNRco_mask = specSNRco == 0.
                 no_averages = 1
-            else: 
-                specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
-                no_averages = specZ.shape[1]
-                specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
-                specZcx = specZ*specLDR
-                specZcx = np.average(specZcx, axis=1)
-                specZ = np.average(specZ, axis=1)
+            else:
+                if self.spectra_in_ram:
+                    #specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
+                    specZ = self.Z[:,ir,it_b:it_e+1]
+                    no_averages = specZ.shape[1]
+                    #specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
+                    specLDR = self.LDR[:,ir,it_b:it_e+1]
+                    specZcx = specZ*specLDR
+                    specZcx = np.average(specZcx, axis=1)
+                    specZ = np.average(specZ, axis=1)
+                    specLDR = specZcx/specZ
+                    #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
+                    specSNRco = self.SNRco[:,ir,it_b:it_e+1]
+                    specSNRco = np.average(specSNRco, axis=1)
+                else:
+                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
+                    no_averages = specZ.shape[1]
+                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
+                    specZcx = specZ*specLDR
+                    specZcx = np.average(specZcx, axis=1)
+                    specZ = np.average(specZ, axis=1)
 
-                specLDR = specZcx/specZ
+                    specLDR = specZcx/specZ
+                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
+                    specSNRco = np.average(specSNRco, axis=1)
+
                 specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
                 specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
-
                 specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-                
-                specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
-                specSNRco = np.average(specSNRco, axis=1)
                 specSNRco_mask = specSNRco == 0.
                 # print('specZ', specZ.shape, specZ)
                 # print('specLDR', specLDR.shape, specLDR)
                 # print('specSNRco', specSNRco.shape, specSNRco)
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if np.all(specZ_mask) else specZ[~specZ_mask].min()*h.z2lin(self.settings['thres_factor_co'])
+            noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(self.settings['thres_factor_co'])
             if self.settings['smooth']:
                 #print('smoothed spectrum')
                 specZ = np.convolve(specZ, np.array([0.5,1,0.5])/2.0, mode='same')
             
-            spectrum = {'ts': self.timestamps[it], 'range': self.range[ir], 'vel': self.velocity,
-                        'specZ': specZ[::-1], 'noise_thres': noise_thres, 'no_temp_avg': no_averages}
+            spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
+                        'noise_thres': noise_thres, 'no_temp_avg': no_averages}
+
+            spectrum['specZ'] = specZ[::-1]
+            spectrum['vel'] = self.velocity
             
             spectrum['specZ_mask'] = specZ_mask[::-1]
             spectrum['specSNRco'] = specSNRco[::-1]
@@ -735,6 +761,25 @@ class peakTreeBuffer():
             spectrum['specZcx_validcx'][Zcx_mask] = 0.0
 
             spectrum['decoupling'] = decoupling
+            
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                spectrum['vel'] = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask', 
+                                'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
+                                'specSNRcx', 'specSNRcx_mask', 'specLDRmasked',
+                                'specZcx_validcx', 'specZ_validcx']
+                for k in keys_to_roll:
+                    spectrum[k] = np.concatenate((
+                        spectrum[k][-roll_velocity:], 
+                        spectrum[k][:-roll_velocity]))
+
             #                                     deep copy of dict 
             travtree = tree_from_spectrum({**spectrum})
 
@@ -796,6 +841,11 @@ class peakTreeBuffer():
             timestamps_grid = time_grid[2]
         else:
             timestamps_grid = self.timestamps
+
+        self.spectra_in_ram = True
+        self.Z = self.f.variables['Z'][:]
+        self.LDR = self.f.variables['LDR'][:]
+        self.SNRco = self.f.variables['SNRco'][:]
 
         max_no_nodes=self.settings['max_no_nodes']
         Z = np.zeros((timestamps_grid.shape[0], self.range.shape[0], max_no_nodes))

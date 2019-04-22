@@ -16,3 +16,6 @@ plots
 .spyderworkspace
 *.lprof
 *.lprof~
+
+*.lprof.out
+build/

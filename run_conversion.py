@@ -89,12 +89,14 @@ files = [
     #'data/D20190223_T1500_1600_Pun_zspc2nc_v1_02_standard.nc4',
     #'data/D20190223_T1600_1700_Pun_zspc2nc_v1_02_standard.nc4',
     #'data/D20190223_T1700_1800_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T1800_1900_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T1900_2000_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T2000_2100_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T2100_2200_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T2200_2300_Pun_zspc2nc_v1_02_standard.nc4',
-    'data/D20190223_T2300_0000_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T1800_1900_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T1900_2000_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T2000_2100_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T2100_2200_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T2200_2300_Pun_zspc2nc_v1_02_standard.nc4',
+    #'data/D20190223_T2300_0000_Pun_zspc2nc_v1_02_standard.nc4',
+
+    'data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4',
 ]
 
 for f in files:
