@@ -66,3 +66,15 @@
     thres_factor_cx = 3.0
     LDR = true
     station_altitude = 100
+
+[kazr_baecc] 
+    location = "Hyytiälä" 
+    shortname = "kazrbaecc" 
+[kazr_baecc.settings] 
+    smooth = true 
+    grid_time = 6 
+    max_no_nodes = 15 
+    thres_factor_co = 3.0 
+    #thres_factor_cx = 3.0 
+    LDR = false 
+    station_altitude = 181

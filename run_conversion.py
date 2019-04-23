@@ -101,7 +101,7 @@ files = [
 
 for f in files:
     pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system='Lacros_Pun')
-    pTB.load_spec_file(f)
+    pTB.load_spec_file(f, load_to_ram=True)
     pTB.assemble_time_height('output/')
 exit()
 
