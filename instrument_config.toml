@@ -78,3 +78,4 @@
     #thres_factor_cx = 3.0 
     LDR = false 
     station_altitude = 181
+    roll_velocity = 86 # ~2m/s

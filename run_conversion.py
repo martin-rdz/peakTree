@@ -48,7 +48,6 @@ pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', l
 pTB.assemble_time_height('output/')
 exit()
 
-
 path = 'data/'
 files = os.listdir(path)
 valid_time = ['20190711', '20190713']

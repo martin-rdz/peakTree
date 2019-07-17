@@ -34,8 +34,9 @@ log = logging.getLogger(__name__)
 
 from operator import itemgetter
 from numba import jit
-#import peakTree.fast_funcs as fast_funcs
+import peakTree.fast_funcs as fast_funcs
 
+#fast_funcs.detect_peak_simple = profile(fast_funcs.detect_peak_simple)
 
 #@profile
 def detect_peak_simple(array, lthres):
@@ -206,6 +207,7 @@ class Node():
         return "{}\n{}".format(string, ''.join([t.__str__() for t in self.children]))
 
 
+#@profile
 def traverse(Node, coords):
     """traverse a node and recursively all subnodes
     
@@ -236,10 +238,12 @@ def full_tree_id(coord):
             [0, 0, 0] -> 3
             [0, 1, 1, 0] -> 13
     '''
-    idx = 2**(len(coord)-1)-1
-    for ind, flag in enumerate(reversed(coord)):
+    idx = 0
+    for ind, flag in enumerate(coord[1:]):
         if flag == 1:
-            idx += (2**ind)
+            idx = (2*idx + 2)
+        else:
+            idx = (2*idx + 1)
     #print(coord,'->',idx)
     return idx
 
@@ -258,8 +262,8 @@ def coords_to_id(traversed):
     for node in traversed:
         k = full_tree_id(node['coords'])
         traversed_id[k] = node
-        parent = [k for k, val in traversed_id.items() if val['coords'] == node['coords'][:-1]]
-        traversed_id[k]['parent_id'] = parent[0] if len(parent) == 1 else -1
+        parent = np.floor((k-1)/2.)
+        traversed_id[k]['parent_id'] = parent if k != 0 else -1
     # level_no = 0
     # while True:
     #     current_level =list(filter(lambda d: len(d['coords']) == level_no+1, traversed))
@@ -294,7 +298,7 @@ def moment(x, Z):
     return mean, rms, skew
 
 #@profile
-def calc_moments(spectrum, bounds, thres, no_cut=False):
+def calc_moments_slower(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
     Args:
@@ -380,7 +384,86 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     return moments, spectrum
 
 
+#@profile
+def calc_moments(spectrum, bounds, thres, no_cut=False):
+    """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
+    Args:
+        spectrum: spectrum dict
+        bounds: boundaries (bin no)
+        thres: threshold used
+    Returns
+        moment, spectrum
+    """
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
+    # TODO add the masked pocessing for the moments
+    #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
+
+    val_ind = ~np.logical_or(
+        spectrum['specZ'][bounds[0]:bounds[1]+1] < thres,
+        spectrum['specZ_mask'][bounds[0]:bounds[1]+1])
+
+    # debug the val_ind truth/falsiness
+    # print('calc_moments_fast', thres, h.lin2z(thres))
+    # print((spectrum['specZ'][bounds[0]:bounds[1]+1] < thres)[:7], (spectrum['specZ'][bounds[0]:bounds[1]+1] < thres)[-7:])
+    # print((spectrum['specZ_mask'][bounds[0]:bounds[1]+1])[:7], (spectrum['specZ_mask'][bounds[0]:bounds[1]+1])[-7:])
+    # print((val_ind)[:7], (val_ind)[-7:])
+    # print((spectrum['vel'][bounds[0]:bounds[1]+1])[:7], (spectrum['vel'][bounds[0]:bounds[1]+1])[-7:])
+
+    if not no_cut:
+        masked_Z = spectrum['specZ'][bounds[0]:bounds[1]+1][val_ind]
+    else:
+        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
+        masked_Z[:bounds[0]] = 0.0
+        masked_Z[bounds[1]+1:] = 0.0
+
+    # seemed to have been quite slow (84us per call or 24% of function)
+    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1][val_ind], masked_Z)
+    moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
+
+    ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1][val_ind].argmax()
+
+    prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][val_ind][ind_max]/thres
+    prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][val_ind][ind_max]
+    moments['prominence'] = prominence if not prominence_mask else 1e-99
+    #assert np.all(validSNRco.mask == validSNRcx.mask)
+    #print('SNRco', h.lin2z(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
+    #print('SNRcx', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]))
+    #print('LDR', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]/spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
+    moments['z'] = Z
+        
+    # ldr calculation after the debugging session
+    ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][val_ind][ind_max]
+    if not np.all(spectrum['specZcx_mask'][bounds[0]:bounds[1]+1]):
+        ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum() / \
+            (spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
+    else:
+        ldr2 = np.nan
+
+    decoup = 10**(spectrum['decoupling']/10.)
+    #print('ldr ', h.lin2z(ldr), ' ldrmax ', h.lin2z(ldrmax), 'new ldr ', h.lin2z(ldr2))
+    #print('ldr without decoup', h.lin2z(ldr-decoup), ' ldrmax ', h.lin2z(ldrmax-decoup), 'new ldr ', h.lin2z(ldr2-decoup))
+
+    # for i in range(spectrum['specZcx_validcx'].shape[0]):
+    #     print(i, h.lin2z(np.array([spectrum['specZ'][i], spectrum['specZcx_validcx'][i], spectrum['specZ_validcx'][i]])), spectrum['specZcx_mask'][i])
+
+    #moments['ldr'] = ldr
+    # seemed to have been quite slow (79us per call or 22% of function)
+    #moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
+    if np.abs(ldr2) > 0.0001:
+        moments['ldr'] = ldr2
+    else:
+        moments['ldr'] = np.nan
+    #moments['ldr'] = ldr2-decoup
+    moments['ldrmax'] = ldrmax
+
+    #moments['minv'] = spectrum['vel'][bounds[0]]
+    #moments['maxv'] = spectrum['vel'][bounds[1]]
+
+    return moments, spectrum
+
+
+#@profile
 def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -430,38 +513,61 @@ def tree_from_spectrum(spectrum):
     #     if not spectrum['specZ'][i] == 0:
     #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
-    peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
+    #peak_ind_old = detect_peak_simple(masked_Z, spectrum['noise_thres'])
+    peak_ind = fast_funcs.detect_peak_simple(masked_Z, spectrum['noise_thres'])
+    #assert peak_ind == peak_ind_old
     # filter all peaks with that are only 1 bin wide
     peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
     if peak_ind:
         # print('peak ind at noise  level', peak_ind)
         if len(peak_ind) == 0:
-            t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
+            #t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
+            t = fast_funcs.Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
         else:
-            t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
+            #t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
+            t = fast_funcs.Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
             for peak_pair in peak_pairs_to_call(peak_ind):
                 # print('peak pair', peak_pair)
+                #t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
                 t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
 
         # minima only inside main peaks
         #minima = get_minima(np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres']*1.1))
         #minima = get_minima(np.ma.masked_less(masked_Z, spectrum['noise_thres']*1.1))
-        minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
+        #minima = get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
+        minima = fast_funcs.get_minima(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30))
+        #import scipy.signal
+        #[print(m, masked_Z[m[0]-1], masked_Z[m[0]+1])for m in minima]
+        #print(scipy.signal.argrelmin(h.fill_with(masked_Z, masked_Z<spectrum['noise_thres']*1.1, 1e-30)))
+        #print(minima)
+        #print(minima_new)
+        #ssert [m for m in minima if m[1] > 1e-29] == [m for m in minima_new if m[1] > 1e-29]
         for m in minima:
             # print('minimum ', m)
             if m[1]>spectrum['noise_thres']*1.1:
+                #t.add_min(m[0], m[1])
                 t.add_min(m[0], m[1])
             else:
                 #print('detected minima too low', m[1], spectrum['noise_thres']*1.1)
                 pass
         #print(t)
-        traversed = coords_to_id(list(traverse(t, [0])))
+        #traversed = coords_to_id(list(traverse(t, [0])))
+        traversed = fast_funcs.coords_to_id(list(traverse(t, [0])))
+
         for i in traversed.keys():
             #if i == 0:
             #    moments, spectrum =  calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             #else:
             if 'specZcx' in spectrum:
-                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+                #moments, _ = calc_moments_slower(spectrum, traversed[i]['bounds'], np.float64(traversed[i]['thres']))
+                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], np.float64(traversed[i]['thres']))
+
+                #assert np.isclose(moments['z'], moments_new['z']), "{} {}".format(moments, moments_new)
+                #assert np.isclose(moments['v'], moments_new['v']), "{} {}".format(moments, moments_new)
+                #if not (np.isnan(moments['ldr']) and np.isnan(moments_new['ldr'])):
+                #    assert np.isclose(moments['ldr'], moments_new['ldr']), "{} {}".format(moments, moments_new)
+                #assert np.isclose(moments['skew'], moments_new['skew']), "{} {}".format(moments, moments_new)
+
             #    alt_moms, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'], no_cut=True)
             #    print(traversed[i]['bounds'], alt_moms)
             else:
@@ -472,6 +578,7 @@ def tree_from_spectrum(spectrum):
             #print('traversed tree')
             #print(i, traversed[i])
         #print(print_tree.travtree2text(traversed))
+
 
         #new skewness split
         chop = False
@@ -689,6 +796,8 @@ class peakTreeBuffer():
             self.Z = self.f.variables['Z'][:]
             self.LDR = self.f.variables['LDR'][:]
             self.SNRco = self.f.variables['SNRco'][:]
+            # calculate once for the full array
+            self.Zcx = self.Z*self.LDR
 
 
     def load_peakTree_file(self, filename):
@@ -768,6 +877,9 @@ class peakTreeBuffer():
             assert self.timestamps[it_e] - self.timestamps[it_b] < 15, 'found averaging range too large'
             log.debug('timerange {} {} {} {}'.format(it_b, h.ts_to_dt(self.timestamps[it_b]), it_e, h.ts_to_dt(self.timestamps[it_e]))) if not silent else None
 
+        spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
+                    'vel': self.velocity}
+
         if self.type == 'spec':
             decoupling = self.settings['decoupling']
 
@@ -775,78 +887,104 @@ class peakTreeBuffer():
             # flatten seems to faster
             if not temporal_average:
                 if self.spectra_in_ram:
-                    specZ = self.Z[:,ir,it].ravel()
-                    specLDR = self.LDR[:,ir,it].ravel()
-                    specSNRco = self.SNRco[:,ir,it].ravel()
+                    specZ = self.Z[:,ir,it].ravel()[::-1]
+                    specLDR = self.LDR[:,ir,it].ravel()[::-1]
+                    specSNRco = self.SNRco[:,ir,it].ravel()[::-1]
                 else:
-                    specZ = self.f.variables['Z'][:,ir,it].ravel()
-                    specLDR = self.f.variables['LDR'][:,ir,it].ravel()
-                    specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
-                specZ_mask = specZ == 0.
+                    specZ = self.f.variables['Z'][:,ir,it].ravel()[::-1]
+                    specLDR = self.f.variables['LDR'][:,ir,it].ravel()[::-1]
+                    specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()[::-1]
+                #specZ_mask = specZ == 0.
                 #print('specZ.shape', specZ.shape, specZ)
                 
-                specLDR_mask = np.isnan(specLDR)
-                specZcx = specZ*specLDR
-                specZcx_mask = np.logical_or(specZ_mask, specLDR_mask)
+                #specLDR_mask = np.isnan(specLDR)
+                #specZcx = specZ*specLDR
+                #specZcx_mask = np.logical_or(specZ_mask, specLDR_mask)
                 
-                specSNRco_mask = specSNRco == 0.
+                #specSNRco_mask = specSNRco == 0.
                 no_averages = 1
             else:
                 if self.spectra_in_ram:
                     #specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
-                    specZ_2d = self.Z[:,ir,it_b:it_e+1][:]
+                    specZ_2d = self.Z[:,ir,it_b:it_e+1][::-1]
                     no_averages = specZ_2d.shape[1]
-                    specLDR_2d = self.LDR[:,ir,it_b:it_e+1][:]
-                    specZcx_2d = specZ_2d*specLDR_2d
+                    specZcx_2d = self.Zcx[:,ir,it_b:it_e+1][::-1]
                     specZcx = specZcx_2d.mean(axis=1)
                     specZ = specZ_2d.mean(axis=1)
                     specLDR = specZcx/specZ
                     #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
-                    specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][:]
+                    specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][::-1]
                     specSNRco = specSNRco_2d.mean(axis=1)
                     # specZ, specZcx, specLDR, specSNRco, no_averages = fast_funcs.load_spec_mira(
                     #     self.Z, self.LDR, self.SNRco, ir, it_b, it_e)
                 else:
-                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1][:]
+                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1][::-1]
                     no_averages = specZ.shape[1]
-                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1][:]
+                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1][::-1]
                     specZcx = specZ*specLDR
                     specZcx = specZcx.mean(axis=1)
                     specZ = specZ.mean(axis=1)
 
                     specLDR = specZcx/specZ
-                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][:]
+                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][::-1]
                     specSNRco = specSNRco.mean(axis=1)
 
-                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
-                specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
-                specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-                specSNRco_mask = specSNRco == 0.
-                # print('specZ', specZ.shape, specZ)
-                # print('specLDR', specLDR.shape, specLDR)
-                # print('specSNRco', specSNRco.shape, specSNRco)
+            # faster to roll rather in the beginning (less spectra)
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                spectrum['vel'] = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+                specZ = np.concatenate(
+                        (specZ[-roll_velocity:], 
+                         specZ[:-roll_velocity]))
+                specLDR = np.concatenate(
+                        (specLDR[-roll_velocity:], 
+                         specLDR[:-roll_velocity]))
+                specZcx = np.concatenate(
+                        (specZcx[-roll_velocity:], 
+                         specZcx[:-roll_velocity]))
+                specSNRco = np.concatenate(
+                        (specSNRco[-roll_velocity:], 
+                         specSNRco[:-roll_velocity]))
+                roll_velocity = False
+
+            specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+            specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
+            specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+            specSNRco_mask = specSNRco == 0.
+            # print('specZ', specZ.shape, specZ)
+            # print('specLDR', specLDR.shape, specLDR)
+            # print('specSNRco', specSNRco.shape, specSNRco)
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(self.settings['thres_factor_co'])
+            # for some reason 47us per call
+            if np.all(specZ_mask):
+                noise_thres = 1e-25
+            else: 
+                noise_thres = np.min(specZ[~specZ_mask])*h.z2lin(self.settings['thres_factor_co'])
             if self.settings['smooth']:
                 #print('smoothed spectrum')
                 specZ = np.convolve(specZ, np.array([0.5,1,0.5])/2.0, mode='same')
             
-            spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
-                        'noise_thres': noise_thres, 'no_temp_avg': no_averages}
 
-            spectrum['specZ'] = specZ[::-1]
-            spectrum['vel'] = self.velocity
+            spectrum['noise_thres'] = noise_thres
+            spectrum['no_temp_avg'] = no_averages
+
+            spectrum['specZ'] = specZ
+            spectrum['specZ_mask'] = specZ_mask
+            spectrum['specSNRco'] = specSNRco
+            spectrum['specSNRco_mask'] = specSNRco_mask
+            spectrum['specLDR'] = specLDR
+            spectrum['specLDR_mask'] = specLDR_mask
             
-            spectrum['specZ_mask'] = specZ_mask[::-1]
-            spectrum['specSNRco'] = specSNRco[::-1]
-            spectrum['specSNRco_mask'] = specSNRco_mask[::-1]
-            spectrum['specLDR'] = specLDR[::-1]
-            spectrum['specLDR_mask'] = specLDR_mask[::-1]
-            
-            spectrum['specZcx'] = specZcx[::-1]
+            spectrum['specZcx'] = specZcx
             # spectrum['specZcx_mask'] = np.logical_or(spectrum['specZ_mask'], spectrum['specLDR_mask'])
-            spectrum['specZcx_mask'] =  specZcx_mask[::-1]
+            spectrum['specZcx_mask'] =  specZcx_mask
 
             # print('test specZcx calc')
             # print(spectrum['specZcx_mask'])
@@ -867,24 +1005,6 @@ class peakTreeBuffer():
 
             spectrum['decoupling'] = decoupling
             
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                spectrum['vel'] = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
-                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask', 
-                                'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
-                                'specSNRcx', 'specSNRcx_mask', 'specLDRmasked',
-                                'specZcx_validcx', 'specZ_validcx']
-                for k in keys_to_roll:
-                    spectrum[k] = np.concatenate((
-                        spectrum[k][-roll_velocity:], 
-                        spectrum[k][:-roll_velocity]))
-
             #                                     deep copy of dict 
             travtree = tree_from_spectrum({**spectrum})
 
@@ -934,6 +1054,7 @@ class peakTreeBuffer():
 
         elif self.type == 'kazr': 
              
+            empty_spec = False
             if not temporal_average:
                 if self.spectra_in_ram:
                     index = self.indices[it,ir]
@@ -954,7 +1075,8 @@ class peakTreeBuffer():
                         specZ = h.z2lin(self.spectra[indices,:])
                     else:
                         #empty spectrum
-                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
+                        #specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70), dtype=np.float64)
+                        empty_spec = True
                 else: 
                     indices = self.f.variables['locator_mask'][it_b:it_e+1,ir].tolist()
                     indices = [i for i in indices if i is not None]
@@ -962,42 +1084,34 @@ class peakTreeBuffer():
                         specZ = h.z2lin(self.f.variables['spectra'][indices,:])
                     else:
                         #empty spectrum
-                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
+                        #specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70), dtype=np.float64)
+                        empty_spec = True
 
-                no_averages = specZ.shape[0] 
-                specZ = np.average(specZ, axis=0)
-                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
-                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)  
+                
+                if not empty_spec:
+                    no_averages = specZ.shape[0]
+                    specZ = np.average(specZ, axis=0)
+                    specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                else:
+                    no_averages = it_e - it_b
+                    specZ = np.full((self.velocity.shape[0]), h.z2lin(-70), dtype=np.float64)                  
  
-            noise = h.estimate_noise(specZ, no_averages) 
+            if not empty_spec:
+                noise = h.estimate_noise(specZ, no_averages) 
+            else:
+                noise = {'noise_mean': h.z2lin(-68)}
             #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
             #    h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean']), 
             #    noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*2
- 
-            if self.settings['smooth']: 
-                #print('smoothed spectrum') 
-                specZ = np.convolve(specZ,  
-                                    np.array([0.5,0.7,1,0.7,0.5])/3.4,  
-                                    mode='same') 
-             
- 
-            specSNRco = specZ/noise_mean 
-            specSNRco_mask = specZ.copy() 
- 
- 
+
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
                 'vel': self.velocity, 
-                'specZ': specZ, 'noise_thres': noise_thres, 
-                'specZ_mask': specZ_mask, 
-                'no_temp_avg': no_averages, 
-                'specSNRco': specSNRco, 
-                'specSNRco_mask': specSNRco_mask 
+                'noise_thres': noise_thres, 
             } 
- 
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
                     roll_velocity = self.settings['roll_velocity']
@@ -1007,11 +1121,31 @@ class peakTreeBuffer():
                                 self.velocity[0] - vel_step, 
                                 num=roll_velocity), 
                     self.velocity[:-roll_velocity]))
-                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask']
-                for k in keys_to_roll:
-                    spectrum[k] = np.concatenate((
-                        spectrum[k][-roll_velocity:], 
-                        spectrum[k][:-roll_velocity]))
+                specZ = np.concatenate(
+                        (specZ[-roll_velocity:], 
+                         specZ[:-roll_velocity]))
+
+
+            if not empty_spec:
+                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+            else:
+                specZ_mask = np.ones(self.velocity.shape[0]).astype(np.bool)
+
+            if self.settings['smooth']: 
+                #print('smoothed spectrum') 
+                specZ = np.convolve(specZ,  
+                                    np.array([0.5,0.7,1,0.7,0.5])/3.4,  
+                                    mode='same') 
+
+
+            specSNRco = specZ/noise_mean 
+            specSNRco_mask = specZ.copy() 
+ 
+            spectrum['specZ'] = specZ
+            spectrum['specZ_mask'] = specZ_mask 
+            spectrum['no_temp_avg'] = no_averages 
+            spectrum['specSNRco'] = specSNRco 
+            spectrum['specSNRco_mask'] = specSNRco_mask 
 
             travtree = tree_from_spectrum({**spectrum}) 
             return travtree, spectrum 
@@ -1225,7 +1359,6 @@ if __name__ == "__main__":
     # pTB.load_peakTree_file('../output/20170311_2000_peakTree.nc4')
     # pTB.get_tree_at(1489262634, 3300)
 
-    exit()
     # test the reconstruction:
     ts = 1489262404
     rg = 3300
