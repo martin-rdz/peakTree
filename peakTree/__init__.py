@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 # log.addHandler(file_handler)
 # log.addHandler(stream_handler)
 
+from operator import itemgetter
+from numba import jit
+#import peakTree.fast_funcs as fast_funcs
+
+
 #@profile
 def detect_peak_simple(array, lthres):
     """detect noise separated peaks
@@ -53,8 +58,12 @@ def detect_peak_simple(array, lthres):
 
 
 #@profile
+@jit
 def get_minima(array):
     """get the minima of an array by calculating the derivative
+
+    tested against scipy.signal.argrelmin without difference
+    in result or speed
 
     Returns:
         list of ``(index, value at index)``
@@ -67,7 +76,8 @@ def get_minima(array):
     rising_all[1:] = rising_all[1:] | rising_2
     min_ind = np.where(rising_all)[0] + 1
     minima = list(zip(min_ind, array[min_ind]))
-    return sorted(minima, key=lambda x: x[1])
+    #return sorted(minima, key=lambda x: x[1])
+    return sorted(minima, key=itemgetter(1))
 
 
 def split_peak_ind_by_space(peak_ind):
@@ -120,7 +130,8 @@ class Node():
         self.root = root
         self.threshold = noise_thres
         self.spec = spec_chunk
-        self.prom_filter = 1.
+        # faster to have prominence filter in linear units
+        self.prom_filter = h.z2lin(1.)
         # prominence filter  2dB (Shupe 2004) or even 6 (Williams 2018)
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
@@ -142,13 +153,14 @@ class Node():
             spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
             prom_left = spec_left[spec_left.argmax()]/thres
             prom_right = spec_right[spec_right.argmax()]/thres
-            if h.lin2z(prom_left) > self.prom_filter and h.lin2z(prom_right) > self.prom_filter:
+            if prom_left > self.prom_filter and prom_right > self.prom_filter:
                 self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
                 self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
             else:
                 #print('omitted noise sep. peak at ', bounds_left, bounds_right, h.lin2z(prom_left), h.lin2z(prom_right))
                 pass
 
+    #@profile
     def add_min(self, new_index, current_thres, ignore_prom=False):
         """add a local minimum
 
@@ -159,9 +171,17 @@ class Node():
         """
         if new_index < self.bounds[0] or new_index > self.bounds[1]:
             raise ValueError("child out of parents bounds")
-        fitting_child = list(filter(lambda x: x.bounds[0] <= new_index and x.bounds[1] >= new_index, self.children))
-        if len(fitting_child) == 1:
-            fitting_child[0].add_min(new_index, current_thres)
+        # this can be simplified for binary trees
+        #fitting_child = list(filter(lambda x: x.bounds[0] <= new_index and x.bounds[1] >= new_index, self.children))
+        #if len(fitting_child) == 1:
+        #    fitting_child[0].add_min(new_index, current_thres)
+
+        if len(self.children) > 0 and self.children[0].bounds[0] <= new_index and self.children[0].bounds[1] >= new_index:
+            # append to left child
+            self.children[0].add_min(new_index, current_thres)
+        elif  len(self.children) > 0 and self.children[1].bounds[0] <= new_index and self.children[1].bounds[1] >= new_index:
+            # append to right child
+            self.children[1].add_min(new_index, current_thres)
         # or insert here
         else:
             spec_left = self.spec[:new_index+1-self.bounds[0]]
@@ -171,22 +191,21 @@ class Node():
             prom_right = spec_right[spec_right.argmax()]/current_thres
             # print('spec_chunk right ', new_index, self.bounds[1], h.lin2z(prom_right), spec_right)
 
-            cond_prom = [h.lin2z(prom_left) > self.prom_filter, h.lin2z(prom_right) > self.prom_filter]
+            cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
             if all(cond_prom) or ignore_prom:
                 self.children.append(Node((self.bounds[0], new_index), 
                                      spec_left, current_thres, parent_lvl=self.level))
                 self.children.append(Node((new_index, self.bounds[1]), 
                                      spec_right, current_thres, parent_lvl=self.level))
-            else:
-                #print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
-                pass 
+            #else:
+            #    #print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
+            #    pass 
 
     def __str__(self):
         string = str(self.level) + ' ' + self.level*'  ' + str(self.bounds) + "   [{:4.3e}]".format(self.threshold)
         return "{}\n{}".format(string, ''.join([t.__str__() for t in self.children]))
 
 
-#@profile
 def traverse(Node, coords):
     """traverse a node and recursively all subnodes
     
@@ -255,6 +274,7 @@ def coords_to_id(traversed):
     #print('coords to id, traversed_id ', traversed_id)
     return traversed_id
 
+@jit
 def moment(x, Z):
     """mean, rms, skew for a vel, Z part of the spectrum
     
@@ -264,11 +284,14 @@ def moment(x, Z):
     Returns:
         dict with v, width, skew
     """
-    mean = np.sum(x*Z)/np.sum(Z)
-    rms = np.sqrt(np.sum(((x-mean)**2)*Z)/np.sum(Z))
-    skew = np.sum(((x-mean)**3)*Z)/(np.sum(Z)*(rms**3))
-    return {'v': mean, 'width': rms, 'skew': skew}
-
+    # probably arr.sum() is faster than np.sum(arr)
+    sumZ = Z.sum() # memory over processing time
+    mean = (x*Z).sum()/sumZ
+    x_mean = x-mean # memory over processing time
+    rms = np.sqrt((((x_mean)**2)*Z).sum()/sumZ)
+    skew = ((((x_mean)**3)*Z)/(sumZ*(rms**3))).sum()
+    #return {'v': mean, 'width': rms, 'skew': skew}
+    return mean, rms, skew
 
 #@profile
 def calc_moments(spectrum, bounds, thres, no_cut=False):
@@ -281,17 +304,19 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     Returns
         moment, spectrum
     """
-    Z = np.sum(spectrum['specZ'][bounds[0]:bounds[1]+1])
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
     # TODO add the masked pocessing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
-    masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
     if not no_cut:
-        masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
+        masked_Z = h.fill_with(spectrum['specZ'], np.logical_or(spectrum['specZ']<thres, spectrum['specZ_mask']), 0.0)
     else:
+        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
         masked_Z[:bounds[0]] = 0.0
         masked_Z[bounds[1]+1:] = 0.0
 
-    moments = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    # seemed to have been quite slow (84us per call or 24% of function)
+    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
     
     #spectrum['specZco'] = spectrum['specZ']/(1+spectrum['specLDR'])
     #spectrum['specZcx'] = (spectrum['specLDR']*spectrum['specZ'])/(1+spectrum['specLDR'])
@@ -308,22 +333,25 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     moments['z'] = Z
     
     # new try for the peak ldr (sum, then relative; not spectrum of relative with sum)
-    if not np.all(spectrum['specZ_mask']) and not np.all(spectrum['specZcx_mask']):
-        min_Zco = np.min(spectrum["specZ"][~spectrum['specZ_mask']])
-        min_Zcx = np.min(spectrum["specZcx"][~spectrum['specZcx_mask']])
-        Zco = spectrum['specZ']
-        Zcx = spectrum['specZcx']
-        #ldr = np.nansum(masked_Zcx[bounds[0]:bounds[1]+1]/min_Zco)/np.sum(masked_Zco[bounds[0]:bounds[1]+1]/min_Zcx)
-        ldr = np.nansum(Zcx[bounds[0]:bounds[1]+1])/np.sum(Zco[bounds[0]:bounds[1]+1])
-        ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
-    else:
-        ldr = np.nan
-        ldrmax = np.nan
+    #
+    # omit this section, it only takes time
+    #
+    # if not np.all(spectrum['specZ_mask']) and not np.all(spectrum['specZcx_mask']):
+    #     min_Zco = np.min(spectrum["specZ"][~spectrum['specZ_mask']])
+    #     min_Zcx = np.min(spectrum["specZcx"][~spectrum['specZcx_mask']])
+    #     Zco = spectrum['specZ']
+    #     Zcx = spectrum['specZcx']
+    #     #ldr = np.nansum(masked_Zcx[bounds[0]:bounds[1]+1]/min_Zco)/np.sum(masked_Zco[bounds[0]:bounds[1]+1]/min_Zcx)
+    #     ldr = np.nansum(Zcx[bounds[0]:bounds[1]+1])/(Zco[bounds[0]:bounds[1]+1]).sum()
+    #     ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
+    # else:
+    #     ldr = np.nan
+    #     ldrmax = np.nan
     
     # ldr calculation after the debugging session
     ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
     if not np.all(spectrum['specZcx_mask']):
-        ldr2 = np.sum(spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1])/np.sum(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1])
+        ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum()/(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
     else:
         ldr2 = np.nan
 
@@ -335,7 +363,12 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #     print(i, h.lin2z(np.array([spectrum['specZ'][i], spectrum['specZcx_validcx'][i], spectrum['specZ_validcx'][i]])), spectrum['specZcx_mask'][i])
 
     #moments['ldr'] = ldr
-    moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
+    # seemed to have been quite slow (79us per call or 22% of function)
+    #moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
+    if np.isfinite(ldr2) and not np.abs(ldr2) < 0.0001:
+        moments['ldr'] = ldr2
+    else:
+        moments['ldr'] = np.nan
     #moments['ldr'] = ldr2-decoup
     moments['ldrmax'] = ldrmax
 
@@ -346,7 +379,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
 
 
 
-def calc_moments_wo_LDR(spectrum, bounds, thres):
+def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
     Args:
@@ -358,8 +391,11 @@ def calc_moments_wo_LDR(spectrum, bounds, thres):
     """
     Z = np.sum(spectrum['specZ'][bounds[0]:bounds[1]+1])
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
-    masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
-    moments = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    if not no_cut:
+        masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
+
+    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
     
     ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
 
@@ -428,6 +464,8 @@ def tree_from_spectrum(spectrum):
             #    print(traversed[i]['bounds'], alt_moms)
             else:
                 moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+                alt_moms, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'], no_cut=True)
+                print(traversed[i]['bounds'], alt_moms)
             traversed[i].update(moments)
             #print('traversed tree')
             #print(i, traversed[i])
@@ -721,28 +759,29 @@ class peakTreeBuffer():
             else:
                 if self.spectra_in_ram:
                     #specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
-                    specZ = self.Z[:,ir,it_b:it_e+1]
-                    no_averages = specZ.shape[1]
-                    #specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
-                    specLDR = self.LDR[:,ir,it_b:it_e+1]
-                    specZcx = specZ*specLDR
-                    specZcx = np.average(specZcx, axis=1)
-                    specZ = np.average(specZ, axis=1)
+                    specZ_2d = self.Z[:,ir,it_b:it_e+1][:]
+                    no_averages = specZ_2d.shape[1]
+                    specLDR_2d = self.LDR[:,ir,it_b:it_e+1][:]
+                    specZcx_2d = specZ_2d*specLDR_2d
+                    specZcx = specZcx_2d.mean(axis=1)
+                    specZ = specZ_2d.mean(axis=1)
                     specLDR = specZcx/specZ
                     #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
-                    specSNRco = self.SNRco[:,ir,it_b:it_e+1]
-                    specSNRco = np.average(specSNRco, axis=1)
+                    specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][:]
+                    specSNRco = specSNRco_2d.mean(axis=1)
+                    # specZ, specZcx, specLDR, specSNRco, no_averages = fast_funcs.load_spec_mira(
+                    #     self.Z, self.LDR, self.SNRco, ir, it_b, it_e)
                 else:
-                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
+                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1][:]
                     no_averages = specZ.shape[1]
-                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1]
+                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1][:]
                     specZcx = specZ*specLDR
-                    specZcx = np.average(specZcx, axis=1)
-                    specZ = np.average(specZ, axis=1)
+                    specZcx = specZcx.mean(axis=1)
+                    specZ = specZ.mean(axis=1)
 
                     specLDR = specZcx/specZ
-                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
-                    specSNRco = np.average(specSNRco, axis=1)
+                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][:]
+                    specSNRco = specSNRco.mean(axis=1)
 
                 specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
                 specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
@@ -885,7 +924,7 @@ class peakTreeBuffer():
                     indices = self.f.variables['locator_mask'][it_b:it_e+1,ir].tolist()
                     indices = [i for i in indices if i is not None]
                     if indices:
-                        specZ = h.z2lin(self.spectra[indices,:])
+                        specZ = h.z2lin(self.f.variables['spectra'][indices,:])
                     else:
                         #empty spectrum
                         specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
@@ -901,7 +940,7 @@ class peakTreeBuffer():
                 noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
-            noise_thres = noise['noise_mean']*3 
+            noise_thres = noise['noise_mean']*2
  
             if self.settings['smooth']: 
                 #print('smoothed spectrum') 

@@ -18,12 +18,16 @@ parser.add_argument('file', help='path of the file')
 parser.add_argument('--no-nodes', type=int, default=0, help='plot nodes up to this no (including)')
 parser.add_argument('--range-interval', type=str, default='min,10000', help='range to plot. e.g. min,7000, min,max, 500,max')
 parser.add_argument('--time-interval', type=str, default='', help='range to plot. e.g. min,7000, min,max, 500,max')
+parser.add_argument('--subfolder', default='', help='path of the file')
 args = parser.parse_args()
 
 pTB = peakTree.peakTreeBuffer()
 pTB.load_peakTree_file(args.file)
 
-savepath = 'plots/'
+if args.subfolder is '':
+    savepath = 'plots/'
+else:
+    savepath = 'plots/{}/'.format(args.subfolder)
 if not os.path.isdir(savepath):
     os.makedirs(savepath)
 
@@ -95,7 +99,7 @@ ax.tick_params(axis='both', which='minor', width=2, length=3)
 cbar.ax.tick_params(axis='both', which='major', labelsize=14,
                     width=2, length=4)
 
-savename = 'plots' + "/" + dt_list[0].strftime("%Y%m%d_%H%M") + "_no_nodes.png"
+savename = savepath + dt_list[0].strftime("%Y%m%d_%H%M") + "_no_nodes.png"
 fig.savefig(savename, dpi=250)
 
 
@@ -135,7 +139,7 @@ for i in plot_nodes:
     cbar.ax.tick_params(axis='both', which='major', labelsize=14,
                         width=2, length=4)
 
-    savename = 'plots' + "/{}_reflectivity_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+    savename = savepath + "{}_reflectivity_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
     fig.savefig(savename, dpi=250)
 
 
@@ -171,7 +175,7 @@ for i in plot_nodes:
     cbar.ax.tick_params(axis='both', which='major', labelsize=14,
                         width=2, length=4)
 
-    savename = 'plots' + "/{}_velocity_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+    savename = savepath + "{}_velocity_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
     fig.savefig(savename, dpi=250)
 
     if 'ldrmax' in pTB.f.variables:
@@ -209,7 +213,7 @@ for i in plot_nodes:
         cbar.ax.tick_params(axis='both', which='major', labelsize=14,
                             width=2, length=4)
 
-        savename = 'plots' + "/{}_ldrmax_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+        savename = savepath + "{}_ldrmax_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
         fig.savefig(savename, dpi=250)
 
     if "LDR" in pTB.f.variables:
@@ -247,5 +251,5 @@ for i in plot_nodes:
         cbar.ax.tick_params(axis='both', which='major', labelsize=14,
                             width=2, length=4)
 
-        savename = 'plots' + "/{}_ldr_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
+        savename = savepath + "{}_ldr_node{}.png".format(dt_list[0].strftime("%Y%m%d_%H%M"), i)
         fig.savefig(savename, dpi=250)
