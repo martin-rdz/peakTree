@@ -308,14 +308,16 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     # TODO add the masked pocessing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:
-        masked_Z = h.fill_with(spectrum['specZ'], np.logical_or(spectrum['specZ']<thres, spectrum['specZ_mask']), 0.0)
+        masked_Z = h.fill_with(spectrum['specZ'][bounds[0]:bounds[1]+1], 
+                        np.logical_or(spectrum['specZ'][bounds[0]:bounds[1]+1]<thres, 
+                                    spectrum['specZ_mask'][bounds[0]:bounds[1]+1]), 0.0)
     else:
         masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
         masked_Z[:bounds[0]] = 0.0
         masked_Z[bounds[1]+1:] = 0.0
 
     # seemed to have been quite slow (84us per call or 24% of function)
-    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
+    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z)
     moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
     
     #spectrum['specZco'] = spectrum['specZ']/(1+spectrum['specLDR'])
@@ -498,6 +500,27 @@ def tree_from_spectrum(spectrum):
     else:
         traversed = {}
     return traversed
+
+#@profile
+def check_part_not_reproduced(tree, spectrum):
+
+    parents = [n.get('parent_id', -1) for n in tree.values()]
+    leave_ids = list(set(tree.keys()) - set(parents))
+    spec_from_mom = np.zeros(spectrum['specZ'].shape)
+    delta_v = spectrum['vel'][2] - spectrum['vel'][1]
+    
+    for i in leave_ids:
+        S = tree[i]['z'] * delta_v
+        # calculate Gaussian only in a small range
+        ivmean = np.searchsorted(spectrum['vel'], tree[i]['v'])
+        step = int(7*tree[i]['width']/delta_v)
+        ista, iend = ivmean - step, ivmean + step
+        spec_from_mom[ista:iend] += S * h.gauss_func(spectrum['vel'][ista:iend], tree[i]['v'], tree[i]['width'])
+        
+    spec_from_mom[spec_from_mom < spectrum['noise_thres']] = spectrum['noise_thres']
+    difference = spectrum['specZ']/spec_from_mom
+   
+    return np.count_nonzero(np.abs(difference[~spectrum['specZ_mask']]) > h.z2lin(7))*delta_v
 
 
 def saveVar(dataset, varData, dtype=np.float32):
@@ -1010,6 +1033,8 @@ class peakTreeBuffer():
         ldrmax = Z.copy()
         prominence = Z.copy()
         no_nodes = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
+        part_not_reproduced = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
+        part_not_reproduced[:] = -999
 
         for it, ts in enumerate(timestamps_grid[:]):
             log.info('it {:5d} ts {}'.format(it, ts))
@@ -1023,14 +1048,14 @@ class peakTreeBuffer():
                 log.debug("current iteration {} {} {}".format(h.ts_to_dt(timestamps_grid[it]), ir, rg))
                 #travtree, _ = self.get_tree_at(ts, rg, silent=True)
                 if self.settings['grid_time']:
-                    travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
+                    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
                 else:
-                    travtree, _ = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
-
+                    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
 
                 node_ids = list(travtree.keys())
                 nodes_to_save = [i for i in node_ids if i < max_no_nodes]
                 no_nodes[it,ir] = len(node_ids)
+                part_not_reproduced[it,ir] = check_part_not_reproduced(travtree, spectrum)
                 #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir], list(travtree.keys()))
                 for k in nodes_to_save:
                     if k in travtree.keys():
@@ -1146,6 +1171,12 @@ class peakTreeBuffer():
                               'arr': no_nodes[:].copy(), 'long_name': "Number of detected nodes",
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
+                              'plot_scale': "linear"})
+
+            saveVar(dataset, {'var_name': 'part_not_reproduced', 'dimension': ('time', 'range'),
+                              'arr': part_not_reproduced[:].copy(), 'long_name': "Part of the spectrum not reproduced by moments",
+                              #'comment': "",
+                              'units': "m s-1", 'missing_value': -999., 'plot_range': (0, 2),
                               'plot_scale': "linear"})
 
             with open('output_meta.toml') as output_meta:

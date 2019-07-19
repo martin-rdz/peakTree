@@ -64,6 +64,18 @@ def flatten(xs):
         result.append(xs)
     return result
 
+@jit
+def gauss_func(x, m, sd):
+    """calculate the gaussian function on a given grid
+    Args:
+        x (array): grid
+        m (float): mean
+        sd (float): standard deviation
+    Returns:
+        array
+    """
+    a = 1. / (sd * np.sqrt(2. * np.pi))
+    return a * np.exp(-(x - m) ** 2 / (2. * sd ** 2))
 
 @jit
 def estimate_noise(spec, mov_avg=1):
