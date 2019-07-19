@@ -34,14 +34,20 @@ pTB = peakTree.peakTreeBuffer(system='Lacros')
 #     pTB.assemble_time_height('output/')
 
 
-pTB = peakTree.peakTreeBuffer(system='Polarstern')
+#pTB = peakTree.peakTreeBuffer(system='Polarstern')
 #pTB.load_spec_file('data/D20170605_T0030_0045_Pol_zspc2nc_v1_02_standard.nc4')
 #pTB.load_spec_file('data/D20170629_T0830_0945_Pol_zspc2nc_v1_02_standard.nc4')
 #pTB.assemble_time_height('output/')
 #pTB.load_spec_file('data/D20170629_T0800_0930_Pol_zspc2nc_v1_02_standard.nc4')
 #pTB.assemble_time_height('output/')
-pTB.load_spec_file('data/D20170629_T0830_0945_Pol_zspc2nc_v1_02_standard.nc4')
+#pTB.load_spec_file('data/D20170629_T0830_0945_Pol_zspc2nc_v1_02_standard.nc4')
+#pTB.assemble_time_height('output/')
+
+pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system='Lacros_Pun')
+pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
 pTB.assemble_time_height('output/')
+exit()
+
 
 path = 'data/'
 files = os.listdir(path)

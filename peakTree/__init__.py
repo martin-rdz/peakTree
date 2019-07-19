@@ -391,7 +391,7 @@ def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     Returns
         moment, spectrum
     """
-    Z = np.sum(spectrum['specZ'][bounds[0]:bounds[1]+1])
+    Z = (spectrum['specZ'][bounds[0]:bounds[1]+1]).sum()
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
     if not no_cut:
         masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
@@ -466,8 +466,8 @@ def tree_from_spectrum(spectrum):
             #    print(traversed[i]['bounds'], alt_moms)
             else:
                 moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
-                alt_moms, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'], no_cut=True)
-                print(traversed[i]['bounds'], alt_moms)
+                #alt_moms, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'], no_cut=True)
+                #print(traversed[i]['bounds'], alt_moms)
             traversed[i].update(moments)
             #print('traversed tree')
             #print(i, traversed[i])
@@ -503,7 +503,16 @@ def tree_from_spectrum(spectrum):
 
 #@profile
 def check_part_not_reproduced(tree, spectrum):
+    """check how good the moments in the tree (only leave nodes)
+    represent the original spectrum (i.e. if there are non-Gaussian peaks)
+    
+    Args:
+        tree: a tree in the traversed (dict) format
+        spectrum: and the corresponding spectrum
 
+    Returns:
+        number of bins, where the reprocduced spectrum differs by more than 7dB
+    """
     parents = [n.get('parent_id', -1) for n in tree.values()]
     leave_ids = list(set(tree.keys()) - set(parents))
     spec_from_mom = np.zeros(spectrum['specZ'].shape)
@@ -620,7 +629,8 @@ class peakTreeBuffer():
     """trees for a time-height chunk
 
     Args:
-        system (string): specify the system/campaign
+        config_file (string, optional): path to the instrument config file (.toml)
+        system (string, optional): specify the system/campaign
 
     The attribute setting may contain
     
@@ -698,8 +708,10 @@ class peakTreeBuffer():
 
 
     def load_kazr_file(self, filename, load_to_ram=False): 
-        """ 
+        """load a kazr file
  
+        Args:
+            filename: specify file
         """ 
         self.type = 'kazr' 
         self.f = netCDF4.Dataset(filename, 'r') 
@@ -936,7 +948,7 @@ class peakTreeBuffer():
             else:
                 if self.spectra_in_ram:
                     indices = self.indices[it_b:it_e+1,ir].tolist()
-                    print(indices)
+                    #print(indices)
                     indices = [i for i in indices if i is not None]
                     if indices:
                         specZ = h.z2lin(self.spectra[indices,:])
@@ -958,9 +970,9 @@ class peakTreeBuffer():
                 specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)  
  
             noise = h.estimate_noise(specZ, no_averages) 
-            print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
-                h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean']), 
-                noise['no_noise_bins'])) 
+            #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
+            #    h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean']), 
+            #    noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*2
