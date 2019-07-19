@@ -6,7 +6,7 @@
     smooth = true
     grid_time = 6
     max_no_nodes = 15
-    thres_factor_co = 3.0
+    thres_factor_co = 6.0
     thres_factor_cx = 3.0
     LDR = true
     station_altitude = 12
@@ -18,10 +18,10 @@
 [Lacros_at_ACCEPT.settings]
     decoupling = -30
     smooth = true
-    grid_time = 5
+    grid_time = 4
     max_no_nodes = 15
-    thres_factor_co = 1.2
-    thres_factor_cx = 1.2
+    thres_factor_co = 1.3
+    thres_factor_cx = 1.3
     LDR = true
     station_altitude = 12
 
@@ -31,7 +31,7 @@
 [Lacros_Pun.settings]
     decoupling = -30
     smooth = true
-    grid_time = 10
+    grid_time = 6
     max_no_nodes = 15
     thres_factor_co = 6.0 # supress spurious peaks introduced by tails
     thres_factor_cx = 3.0
