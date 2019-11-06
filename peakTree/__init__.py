@@ -519,6 +519,8 @@ def check_part_not_reproduced(tree, spectrum):
     delta_v = spectrum['vel'][2] - spectrum['vel'][1]
     
     for i in leave_ids:
+        if tree[i]['width'] < 0.001:
+            tree[i]['width'] = 0.0001
         S = tree[i]['z'] * delta_v
         # calculate Gaussian only in a small range
         ivmean = np.searchsorted(spectrum['vel'], tree[i]['v'])
@@ -1070,7 +1072,7 @@ class peakTreeBuffer():
                 part_not_reproduced[it,ir] = check_part_not_reproduced(travtree, spectrum)
                 #print('max_no_nodes ', max_no_nodes, no_nodes[it,ir], list(travtree.keys()))
                 for k in nodes_to_save:
-                    if k in travtree.keys():
+                    if k in travtree.keys() and k < max_no_nodes:
                         val = travtree[k]
                         #print(k,val)
                         Z[it,ir,k] = h.lin2z(val['z'])
