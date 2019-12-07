@@ -494,3 +494,32 @@ def tree_from_spectrum(spectrum, peak_finding_params):
     else:
         traversed = {}
     return traversed
+
+def tree_from_peako(spectrum, noise_sep, internal):
+
+    #add root node
+    if noise_sep:
+        t = Node((noise_sep[0][0], noise_sep[-1][-1]), 
+                spectrum['specZ'][noise_sep[0][0]:noise_sep[-1][-1]+1], 
+                spectrum['noise_thres'], root=True)
+        for peak_pair in peak_pairs_to_call(noise_sep):
+            # print('peak pair', peak_pair)
+            t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+        for m in internal:
+            t.add_min(m, spectrum['specZ'][m], ignore_prom=True)
+
+        print(t)
+        traversed = coords_to_id(list(traverse(t, [0])))
+        for i in traversed.keys():
+            moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            traversed[i].update(moments)
+            #print('traversed tree')
+            # if moments['v'] == 0.0 or not np.isfinite(moments['v']):
+            #     print(i, traversed[i])
+            #     input()
+
+        print(print_tree.travtree2text(traversed))
+    else:
+        traversed = {}
+    return traversed
+

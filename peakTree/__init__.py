@@ -395,7 +395,6 @@ class peakTreeBuffer():
         #     self.SNRco = self.f.variables['SNRco'][:]
 
 
-
     #@profile
     def get_tree_at(self, sel_ts, sel_range, temporal_average=False, 
                     roll_velocity=False, peak_finding_params={}, silent=False):
@@ -1084,6 +1083,71 @@ class peakTreeBuffer():
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
             return travtree, spectrum 
 
+
+        elif self.type == 'peako':
+            assert temporal_average == False
+
+            specZ = h.z2lin(self.f.variables['spectra'][:,ir,it])
+            specZ = specZ*h.z2lin(self.settings['cal_const'])*self.range[ir]**2
+            specZ_mask = specZ == 0.
+            noise = h.estimate_noise(specZ)
+            # some debuggung for the noise estimate
+
+            # for some reason the noise estimate is too high
+            #print('raw spec', self.f.variables['spectra'][:20,ir,it])
+            #noise_raw_dB = h.estimate_noise(self.f.variables['spectra'][:,ir,it])
+            #print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
+            #    noise_raw_dB['noise_sep'], noise_raw_dB['noise_mean']))
+            #noise_raw_lin = h.estimate_noise(h.z2lin(self.f.variables['spectra'][:,ir,it]))
+            #print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
+            #    h.lin2z(noise_raw_lin['noise_sep']), h.lin2z(noise_raw_lin['noise_mean'])))
+
+            #print('peako noise level ', self.f.variables['noiselevel'][ir,it])
+            #print('calibrated ', h.lin2z(h.z2lin(self.f.variables['noiselevel'][ir,it])*h.z2lin(self.settings['cal_const'])*self.range[ir]**2))
+            #noise_thres = noise['noise_sep']
+            noise_thres = noise['noise_mean']*3
+            noise_mean = noise['noise_mean']
+
+            specSNRco = specZ/noise_mean
+            specSNRco_mask = specZ.copy()
+            print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
+                h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean'])))
+
+            spectrum = {
+                'ts': self.timestamps[it], 'range': self.range[ir], 
+                'vel': self.velocity,
+                'specZ': specZ, 'noise_thres': noise_thres,
+                'specZ_mask': specZ_mask,
+                'no_temp_avg': 0,
+                'specSNRco': specSNRco,
+                'specSNRco_mask': specSNRco_mask
+            }
+
+            def divide_bounds(bounds):
+                """
+                divide_bounds([[10,20],[20,25],[25,30],[40,50]]) 
+                => noise_sep [[10, 30], [40, 50]], internal [20, 25]
+                """
+                bounds = list(sorted(h.flatten(bounds)))
+                occ = dict((k, (bounds).count(k)) for k in set(bounds))
+                internal = [k for k in occ if occ[k] == 2]
+                noise_sep = [b for b in bounds if b not in internal]
+                noise_sep = [[noise_sep[i], noise_sep[i+1]] for i in \
+                             range(0, len(noise_sep)-1,2)]
+                return noise_sep, internal
+
+            left_edges = self.f.variables['left_edge'][:,ir,it].astype(np.int).compressed().tolist()
+            right_edges = self.f.variables['right_edge'][:,ir,it].astype(np.int).compressed().tolist()
+            bounds = list(zip(left_edges, right_edges))
+
+            if not all([e[0]<e[1] for e in bounds]):
+                bounds = []
+            d_bounds = divide_bounds(bounds)
+            print("{} => {} {}".format(bounds, *d_bounds))
+            travtree = tree_from_peako({**spectrum}, *d_bounds)
+            return travtree, spectrum
+
+
     #@profile
     def assemble_time_height(self, outdir):
         """convert a whole spectra file to the peakTree node file
@@ -1096,6 +1160,8 @@ class peakTreeBuffer():
         if self.settings['grid_time']:
             time_grid = get_time_grid(self.timestamps, (self.timestamps[0], self.timestamps[-1]), self.settings['grid_time'])
             timestamps_grid = time_grid[2]
+            #print(time_grid)
+            #exit()
         else:
             timestamps_grid = self.timestamps
 
