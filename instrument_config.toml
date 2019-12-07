@@ -78,3 +78,18 @@
     #thres_factor_cx = 3.0 
     LDR = false 
     station_altitude = 181
+
+
+[joyrad_nya] 
+    location = "Ny-Ålesund" 
+    shortname = "joyrad_nya" 
+[joyrad_nya.settings] 
+    #smooth = true 
+    smooth = 'broad' 
+    grid_time = 4 
+    max_no_nodes = 15 
+    # for joyrad test linear factor
+    thres_factor_co = 2 
+    #thres_factor_cx = 3.0 
+    LDR = false 
+    station_altitude = 10

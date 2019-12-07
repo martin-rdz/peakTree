@@ -27,34 +27,11 @@ files=(
     'output/20141102_1800_Cab_peakTree.nc4'
     'output/20141102_1859_Cab_peakTree.nc4'
     )
-    
-files=(
-    'output/20190207_0659_Pun_peakTree.nc4'
-    'output/20190207_0800_Pun_peakTree.nc4'
-    'output/20190207_0900_Pun_peakTree.nc4'
-    'output/20190207_0959_Pun_peakTree.nc4'
-    'output/20190210_0359_Pun_peakTree.nc4'
-    'output/20190210_0500_Pun_peakTree.nc4'
-    'output/20190210_0600_Pun_peakTree.nc4'
-    'output/20190210_0700_Pun_peakTree.nc4'
-    'output/20190211_0900_Pun_peakTree.nc4'
-    'output/20190211_1000_Pun_peakTree.nc4'
-    'output/20190211_1100_Pun_peakTree.nc4'
-    'output/20190211_1200_Pun_peakTree.nc4'
-    'output/20190212_0400_Pun_peakTree.nc4'
-    'output/20190212_0500_Pun_peakTree.nc4'
-    'output/20190212_0600_Pun_peakTree.nc4'
-    'output/20190212_0659_Pun_peakTree.nc4'
-    'output/20190219_0000_Pun_peakTree.nc4'
-    'output/20190219_0100_Pun_peakTree.nc4'
-    'output/20190219_0200_Pun_peakTree.nc4'
-    'output/20190219_0300_Pun_peakTree.nc4'
-    'output/20190219_0400_Pun_peakTree.nc4'
-    'output/20190219_0500_Pun_peakTree.nc4'
-    'output/20190219_0600_Pun_peakTree.nc4'
-    'output/20190219_0700_Pun_peakTree.nc4'
-    )
 
+files=(
+    'output/20140221_2232_kazrbaecc_peakTree.nc4'
+    'output/20140221_2200_kazrbaecc_peakTree.nc4'
+)
 
 for i in "${files[@]}"
 do

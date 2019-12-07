@@ -14,6 +14,8 @@ numpy==1.14.5
 graphviz==0.8.2
 matplotlib==2.2.2
 netCDF4==1.4.2
+numba==0.37.0
+toml
 ```
 
 ### Setup
