@@ -102,10 +102,11 @@ class Node():
         bounds: boundaries in bin coordinates
         spec_chunk: spectral reflectivity within this node
         noise_thres: noise threshold hat separated this peak
+        prom_thres: prominence threshold in linear units
         root: flag indicating if root node
         parent_lvl: level of the parent node
     """
-    def __init__(self, bounds, spec_chunk, noise_thres, root=False, parent_lvl=0):
+    def __init__(self, bounds, spec_chunk, noise_thres, prom_thres, root=False, parent_lvl=0):
         self.bounds = bounds
         self.children = []
         self.level = 0 if root else parent_lvl + 1
@@ -113,7 +114,7 @@ class Node():
         self.threshold = noise_thres
         self.spec = spec_chunk
         # faster to have prominence filter in linear units
-        self.prom_filter = h.z2lin(1.)
+        self.prom_filter = prom_thres
         # prominence filter  2dB (Shupe 2004) or even 6 (Williams 2018)
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
@@ -136,8 +137,8 @@ class Node():
             prom_left = spec_left[spec_left.argmax()]/thres
             prom_right = spec_right[spec_right.argmax()]/thres
             if prom_left > self.prom_filter and prom_right > self.prom_filter:
-                self.children.append(Node(bounds_left, spec_left, thres, parent_lvl=self.level))
-                self.children.append(Node(bounds_right, spec_right, thres, parent_lvl=self.level))
+                self.children.append(Node(bounds_left, spec_left, thres, self.prom_filter, parent_lvl=self.level))
+                self.children.append(Node(bounds_right, spec_right, thres, self.prom_filter, self.prom_filter, parent_lvl=self.level))
             else:
                 #print('omitted noise sep. peak at ', bounds_left, bounds_right, h.lin2z(prom_left), h.lin2z(prom_right))
                 pass
@@ -176,9 +177,9 @@ class Node():
             cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
             if all(cond_prom) or ignore_prom:
                 self.children.append(Node((self.bounds[0], new_index), 
-                                     spec_left, current_thres, parent_lvl=self.level))
+                                     spec_left, current_thres, self.prom_filter, parent_lvl=self.level))
                 self.children.append(Node((new_index, self.bounds[1]), 
-                                     spec_right, current_thres, parent_lvl=self.level))
+                                     spec_right, current_thres, self.prom_filter, parent_lvl=self.level))
             #else:
             #    #print('omitted peak at ', new_index, 'between ', self.bounds, h.lin2z(prom_left), h.lin2z(prom_right))
             #    pass 
@@ -393,7 +394,7 @@ def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
 
 
 #@profile
-def tree_from_spectrum(spectrum):
+def tree_from_spectrum(spectrum, peak_finding_params):
     """generate the tree and return a traversed version
 
     .. code-block:: python
@@ -407,6 +408,11 @@ def tree_from_spectrum(spectrum):
         traversed tree
     """
 
+    if 'prom_thres' in peak_finding_params:
+        prom_thres = h.z2lin(peak_finding_params['prom_thres'])
+    else:
+        prom_thres = h.z2lin(1.)
+
     # for i in range(spectrum['specZ'].shape[0]):
     #     if not spectrum['specZ'][i] == 0:
     #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
@@ -417,9 +423,11 @@ def tree_from_spectrum(spectrum):
     if peak_ind:
         # print('peak ind at noise  level', peak_ind)
         if len(peak_ind) == 0:
-            t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], spectrum['noise_thres'], root=True)
+            t = Node(peak_ind[0], spectrum['specZ'][peak_ind[0]:peak_ind[1]+1], 
+                     spectrum['noise_thres'], prom_thres, root=True)
         else:
-            t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], spectrum['noise_thres'], root=True)
+            t = Node((peak_ind[0][0], peak_ind[-1][-1]), spectrum['specZ'][peak_ind[0][0]:peak_ind[-1][-1]+1], 
+                     spectrum['noise_thres'], prom_thres, root=True)
             for peak_pair in peak_pairs_to_call(peak_ind):
                 # print('peak pair', peak_pair)
                 t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])

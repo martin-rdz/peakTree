@@ -200,6 +200,7 @@ class peakTreeBuffer():
             raise ValueError('no system defined')
         self.spectra_in_ram = False
 
+        self.peak_finding_params = config[system]['settings']['peak_finding_params']
         
         self.git_hash = get_git_hash()
 
@@ -333,7 +334,8 @@ class peakTreeBuffer():
 
 
     #@profile
-    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, roll_velocity=False, silent=False):
+    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, 
+                    roll_velocity=False, peak_finding_params={}, silent=False):
         """get a single tree
         either from the spectrum directly (prior call of load_spec_file())
         or from the pre-converted file (prior call of load_peakTree_file())
@@ -345,10 +347,19 @@ class peakTreeBuffer():
                 (tuple of bin in time dimension or number of seconds)
             roll_velocity (optional): shift the x rightmost bins to the
                 left 
+            peak_finding_params (optional):
             silent: verbose output
+
+        'vel_smooth': convolution with given array 
+        'prom_thres': prominence threshold in dB
+        
         Returns:
             dictionary with all nodes and the parameters of each node
         """
+
+        peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
+        print('using peak_finding_params', peak_finding_params)
+
         if type(sel_ts) is tuple and type(sel_range) is tuple:
             it, sel_ts = sel_ts
             ir, sel_range = sel_range
@@ -426,10 +437,14 @@ class peakTreeBuffer():
                 # print('specSNRco', specSNRco.shape, specSNRco)
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(self.settings['thres_factor_co'])
-            if self.settings['smooth']:
+            noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
+            if np.any(peak_finding_params['vel_smooth']):
                 #print('smoothed spectrum')
-                specZ = np.convolve(specZ, np.array([0.5,1,0.5])/2.0, mode='same')
+                if 'vel_smooth' in peak_finding_params:
+                    convol_window = peak_finding_params['vel_smooth']
+                else:
+                    convol_window = np.array([0.5,1,0.5])/2.0
+                specZ = np.convolve(specZ, convol_window, mode='same')
             
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
@@ -453,7 +468,7 @@ class peakTreeBuffer():
             spectrum['specSNRcx'] = spectrum['specSNRco']*spectrum['specLDR']
             spectrum['specSNRcx_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specLDR_mask'])
 
-            thres_Zcx = np.nanmin(spectrum['specZcx'])*h.z2lin(self.settings['thres_factor_cx'])
+            thres_Zcx = np.nanmin(spectrum['specZcx'])*h.z2lin(peak_finding_params['thres_factor_cx'])
             Zcx_mask = np.logical_or(spectrum['specZcx'] < thres_Zcx, ~np.isfinite(spectrum['specZcx']))
             spectrum['specLDRmasked'] = spectrum['specLDR'].copy()
             spectrum['specLDRmasked'][Zcx_mask] = np.nan
@@ -485,7 +500,7 @@ class peakTreeBuffer():
                         spectrum[k][:-roll_velocity]))
 
             #                                     deep copy of dict 
-            travtree = generate_tree.tree_from_spectrum({**spectrum})
+            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
 
             return travtree, spectrum
 
@@ -576,10 +591,14 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*2
  
-            if self.settings['smooth']: 
-                #print('smoothed spectrum') 
+            if np.any(peak_finding_params['vel_smooth']):
+                #print('smoothed spectrum')
+                if isinstance(peak_finding_params['vel_smooth'],(list,np.ndarray)):
+                    convol_window = peak_finding_params['vel_smooth']
+                else:
+                    convol_window = np.array([0.5,0.7,1,0.7,0.5])/3.4
                 specZ = np.convolve(specZ,  
-                                    np.array([0.5,0.7,1,0.7,0.5])/3.4,  
+                                    convol_window,
                                     mode='same') 
              
  
@@ -612,7 +631,7 @@ class peakTreeBuffer():
                         spectrum[k][-roll_velocity:], 
                         spectrum[k][:-roll_velocity]))
 
-            travtree = generate_tree.tree_from_spectrum({**spectrum}) 
+            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
             return travtree, spectrum 
 
 
@@ -792,18 +811,30 @@ class peakTreeBuffer():
                noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
-            noise_thres = noise['noise_mean']*self.settings['thres_factor_co']
+            noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
-            if self.settings['smooth'] and self.settings['smooth'] != 'broad': 
-                #print('smoothed spectrum small') 
+            # if self.settings['smooth'] and self.settings['smooth'] != 'broad': 
+            #     #print('smoothed spectrum small') 
+            #     specZ = np.convolve(specZ,  
+            #                         np.array([0.5,0.7,1,0.7,0.5])/3.4,  
+            #                         mode='same')
+            # elif self.settings['smooth'] and self.settings['smooth'] == 'broad': 
+            #     #print('smoothed spectrum broad') 
+            #     specZ = np.convolve(specZ,  
+            #                         np.array([0.5,0.7,0.8,0.9,1,1,1,0.9,0.8,0.7,0.5])/8.8,  
+            #                         mode='same')
+            if np.any(peak_finding_params['vel_smooth']):
+                #print('smoothed spectrum')
+                if isinstance(peak_finding_params['vel_smooth'],(list,np.ndarray)):
+                    convol_window = peak_finding_params['vel_smooth']
+                else:
+                    if peak_finding_params['vel_smooth'] != 'broad':
+                        convol_window = np.array([0.5,0.7,1,0.7,0.5])/3.4
+                    elif peak_finding_params['vel_smooth'] == 'broad':
+                        convol_window = np.array([0.5,0.7,0.8,0.9,1,1,1,0.9,0.8,0.7,0.5])/8.8
                 specZ = np.convolve(specZ,  
-                                    np.array([0.5,0.7,1,0.7,0.5])/3.4,  
-                                    mode='same')
-            elif self.settings['smooth'] and self.settings['smooth'] == 'broad': 
-                #print('smoothed spectrum broad') 
-                specZ = np.convolve(specZ,  
-                                    np.array([0.5,0.7,0.8,0.9,1,1,1,0.9,0.8,0.7,0.5])/8.8,  
-                                    mode='same')         
+                                    convol_window,
+                                    mode='same') 
  
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 
@@ -834,7 +865,7 @@ class peakTreeBuffer():
                         spectrum[k][-roll_velocity:], 
                         spectrum[k][:-roll_velocity]))
 
-            travtree = generate_tree.tree_from_spectrum({**spectrum}) 
+            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
             #print(travtree.keys())
             #exit()
             return travtree, spectrum 
