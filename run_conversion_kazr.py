@@ -17,9 +17,11 @@ log.setLevel(logging.INFO)
 log.addHandler(logging.StreamHandler())
  
 pTB = peakTree.peakTreeBuffer(system='kazr_mosaic') 
-pTB.load_newkazr_file('data/kazr_mosaic_ge/moskazrcfrspcgecopolM1.a1.20191021.020003.nc', load_to_ram=True) 
-pTB.assemble_time_height('output/kazr_mosaic_ge/') 
+#pTB.load_newkazr_file('data/kazr_mosaic_ge/moskazrcfrspcgecopolM1.a1.20191021.020003.nc', load_to_ram=True) 
+#pTB.assemble_time_height('output/kazr_mosaic_ge/') 
 
+pTB.load_newkazr_file('data/moskazrcfrspcgecopolM1.a1.20200407.000003.nc', load_to_ram=True) 
+pTB.assemble_time_height('output/') 
 
 
 

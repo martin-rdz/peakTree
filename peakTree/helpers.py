@@ -36,11 +36,13 @@ def ts_to_dt(ts):
     return datetime.datetime.utcfromtimestamp(ts)
 
 
+@jit(nopython=True, fastmath=True)
 def lin2z(array):
     """calculate dB values from a array of linear"""
     return 10*np.log10(array)
 
 
+@jit(nopython=True, fastmath=True)
 def z2lin(array):
     """calculate linear values from a array of dBs"""
     return 10**(array/10.)
@@ -64,7 +66,7 @@ def flatten(xs):
         result.append(xs)
     return result
 
-@jit
+@jit(nopython=True, fastmath=True)
 def gauss_func(x, m, sd):
     """calculate the gaussian function on a given grid
     Args:
@@ -77,7 +79,7 @@ def gauss_func(x, m, sd):
     a = 1. / (sd * np.sqrt(2. * np.pi))
     return a * np.exp(-(x - m) ** 2 / (2. * sd ** 2))
 
-@jit
+@jit(nopython=True, fastmath=True)
 def estimate_noise(spec, mov_avg=1):
     """
     Noise estimate based on Hildebrand and Sekhon (1974)

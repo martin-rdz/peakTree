@@ -111,7 +111,8 @@ def plot_spectrum(travtree, spectrum, savepath):
     """
     dt=h.ts_to_dt(spectrum['ts'])
 
-    decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])+spectrum['decoupling'])
+    if 'decoupling' in spectrum:
+        decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])+spectrum['decoupling'])
     # cut again to remove the smoothing effects at the edges
     specZ_cut = np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres'])
     
@@ -125,19 +126,21 @@ def plot_spectrum(travtree, spectrum, savepath):
     ax.plot([e[0] for e in flatten], h.lin2z(np.array([e[1] for e in flatten])), 'o', color='r', markersize=5)
 
     #ax.hlines(h.lin2z(valid_LDR), -10, 10, color='grey')
-    ax.step(spectrum['vel'], h.lin2z(spectrum['specLDR']), 
-             linewidth=1.5, color='turquoise', where='mid', label='specLDR')
-    ax.step(spectrum['vel'], h.lin2z(spectrum['specLDRmasked']), 
-             linewidth=1.5, color='blue', where='mid', label='specLDR')
+    if 'specLDR' in spectrum:
+        ax.step(spectrum['vel'], h.lin2z(spectrum['specLDR']), 
+                linewidth=1.5, color='turquoise', where='mid', label='specLDR')
+        ax.step(spectrum['vel'], h.lin2z(spectrum['specLDRmasked']), 
+                linewidth=1.5, color='blue', where='mid', label='specLDR')
 
     ax.step(spectrum['vel'], h.lin2z(spectrum['specZ']),
             linewidth=1.5, color='pink', where='mid')
     ax.step(spectrum['vel'], h.lin2z(specZ_cut),
             linewidth=1.5, color='red', where='mid', label='specZ')
-    ax.step(spectrum['vel'], h.lin2z(spectrum['specZcx']), 
-            linewidth=1.5, color='darkviolet', where='mid', label='specZcx')
-    ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
-            linewidth=1.5, color='grey', where='mid', label='decoupling')
+    if 'specZcx' in spectrum:
+        ax.step(spectrum['vel'], h.lin2z(spectrum['specZcx']), 
+                linewidth=1.5, color='darkviolet', where='mid', label='specZcx')
+        ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
+                linewidth=1.5, color='grey', where='mid', label='decoupling')
     ax.set_xlim([-6,3])
     ax.set_ylabel('Spectral Reflectivity [dBZ]')
     ax.set_xlabel('Velocity [m s$\\mathregular{^{-1}}$]')

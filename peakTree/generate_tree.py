@@ -20,6 +20,7 @@ from numba import jit
 log = logging.getLogger('peakTree')
 
 #@profile
+@jit(fastmath=True)
 def detect_peak_simple(array, lthres):
     """detect noise separated peaks
 
@@ -40,7 +41,7 @@ def detect_peak_simple(array, lthres):
 
 
 #@profile
-@jit
+@jit(nopython=True, fastmath=True)
 def get_minima(array):
     """get the minima of an array by calculating the derivative
 
@@ -58,10 +59,12 @@ def get_minima(array):
     rising_all[1:] = rising_all[1:] | rising_2
     min_ind = np.where(rising_all)[0] + 1
     minima = list(zip(min_ind, array[min_ind]))
-    #return sorted(minima, key=lambda x: x[1])
-    return sorted(minima, key=itemgetter(1))
+    # numba jit and itemgetter are not compatible
+    return sorted(minima, key=lambda x: x[1])
+    #return sorted(minima, key=itemgetter(1))
 
 
+@jit(fastmath=True)
 def split_peak_ind_by_space(peak_ind):
     """split a list of peak indices by their maximum space
     use for noise floor separated peaks
@@ -257,7 +260,7 @@ def coords_to_id(traversed):
     #print('coords to id, traversed_id ', traversed_id)
     return traversed_id
 
-@jit
+@jit(nopython=True, fastmath=True)
 def moment(x, Z):
     """mean, rms, skew for a vel, Z part of the spectrum
     
@@ -277,6 +280,7 @@ def moment(x, Z):
     return mean, rms, skew
 
 #@profile
+@jit(fastmath=True)
 def calc_moments(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -363,7 +367,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     return moments, spectrum
 
 
-
+@jit(fastmath=True)
 def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 

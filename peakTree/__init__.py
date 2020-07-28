@@ -270,6 +270,7 @@ class peakTreeBuffer():
         self.velocity = self.f.variables['velocity_bins'][:] 
 
         self.cal_constant = float(self.f.cal_constant[:-3])
+        self.cal_constant_lin = h.z2lin(self.cal_constant)
  
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
         if load_to_ram == True:
@@ -307,6 +308,7 @@ class peakTreeBuffer():
 
         self.cal_constant = self.f.variables['r_calib_radar_constant_h'][:]
         assert self.cal_constant.shape[0] == 1
+        self.cal_constant_lin = h.z2lin(self.cal_constant)
 
         if load_to_ram == True:
             self.spectra_in_ram = True
@@ -485,20 +487,19 @@ class peakTreeBuffer():
             
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
-            
 
-            spectrum['specZ'] = specZ.copy()
+            spectrum['specZ'] = specZ[:]
             spectrum['vel'] = self.velocity
             
-            spectrum['specZ_mask'] = specZ_mask.copy()
-            spectrum['specSNRco'] = specSNRco.copy()
-            spectrum['specSNRco_mask'] = specSNRco_mask.copy()
-            spectrum['specLDR'] = specLDR.copy()
-            spectrum['specLDR_mask'] = specLDR_mask.copy()
+            spectrum['specZ_mask'] = specZ_mask[:]
+            spectrum['specSNRco'] = specSNRco[:]
+            spectrum['specSNRco_mask'] = specSNRco_mask[:]
+            spectrum['specLDR'] = specLDR[:]
+            spectrum['specLDR_mask'] = specLDR_mask[:]
             
-            spectrum['specZcx'] = specZcx.copy()
+            spectrum['specZcx'] = specZcx[:]
             # spectrum['specZcx_mask'] = np.logical_or(spectrum['specZ_mask'], spectrum['specLDR_mask'])
-            spectrum['specZcx_mask'] =  specZcx_mask.copy()
+            spectrum['specZcx_mask'] =  specZcx_mask[:]
 
             # print('test specZcx calc')
             # print(spectrum['specZcx_mask'])
@@ -595,7 +596,7 @@ class peakTreeBuffer():
                     specZ = h.z2lin(self.f.variables['spectra'][index,:])
                     #specZ = self.f.variables['spectra'][it,ir,:] 
                 no_averages = 1 
-                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
                 specZ_mask = specZ == 0. 
             else:
                 if self.spectra_in_ram:
@@ -618,7 +619,7 @@ class peakTreeBuffer():
 
                 no_averages = specZ.shape[0] 
                 specZ = np.average(specZ, axis=0)
-                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
                 specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)  
  
             noise = h.estimate_noise(specZ, no_averages) 
@@ -627,7 +628,7 @@ class peakTreeBuffer():
             #    noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
-            noise_thres = noise['noise_mean']*2
+            noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
             if np.any(peak_finding_params['vel_smooth']):
                 #print('smoothed spectrum')
@@ -675,8 +676,8 @@ class peakTreeBuffer():
 
         elif self.type == 'kazr_new': 
 
-            self.indices = self.f.variables['spectrum_index'][:]
-            self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
+            #self.indices = self.f.variables['spectrum_index'][:]
+            #self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
              
             if not temporal_average:
                 if self.spectra_in_ram:
@@ -687,7 +688,7 @@ class peakTreeBuffer():
                     specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][index,:])
                     # specZ = self.f.variables['spectra'][it,ir,:] 
                 no_averages = 1 
-                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
                 specZ_mask = specZ == 0. 
             else:
                 if self.spectra_in_ram:
@@ -710,8 +711,9 @@ class peakTreeBuffer():
 
                 no_averages = specZ.shape[0] 
                 specZ = np.average(specZ, axis=0)
-                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
-                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)  
+                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
+                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+                assert np.all(~specZ_mask), 'mask probably not necessary for kazr spec'
  
             noise = h.estimate_noise(specZ, no_averages) 
             #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
@@ -719,7 +721,7 @@ class peakTreeBuffer():
             #    noise['no_noise_bins'])) 
             noise_mean = noise['noise_mean'] 
             #noise_thres = noise['noise_sep'] 
-            noise_thres = noise['noise_mean']*2
+            noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
             if np.any(peak_finding_params['vel_smooth']):
                 #print('smoothed spectrum')
@@ -735,7 +737,7 @@ class peakTreeBuffer():
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 
  
-            print('Z', h.lin2z(specZ))
+            #print('Z', h.lin2z(specZ))
 
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
@@ -787,7 +789,7 @@ class peakTreeBuffer():
             #print('peako noise level ', self.f.variables['noiselevel'][ir,it])
             #print('calibrated ', h.lin2z(h.z2lin(self.f.variables['noiselevel'][ir,it])*h.z2lin(self.settings['cal_const'])*self.range[ir]**2))
             #noise_thres = noise['noise_sep']
-            noise_thres = noise['noise_mean']*3
+            noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
             noise_mean = noise['noise_mean']
 
             specSNRco = specZ/noise_mean

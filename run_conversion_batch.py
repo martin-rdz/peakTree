@@ -46,7 +46,10 @@ files = [f for f in files if "ldrcorr" in f]
 
 for f in files[:]:
     print('now doing ', f)
-    pTB.load_spec_file(path+f, load_to_ram=True)
+    if args.config == 'kazr_mosaic':
+        pTB.load_newkazr_file(path+f, load_to_ram=True)
+    else:
+        pTB.load_spec_file(path+f, load_to_ram=True)
     pTB.assemble_time_height(outpath)
 
 
