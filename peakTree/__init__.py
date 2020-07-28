@@ -234,6 +234,7 @@ class peakTreeBuffer():
             self.SNRco = self.f.variables['SNRco'][:]
 
 
+
     def load_peakTree_file(self, filename):
         """load preprocessed peakTree file
      
@@ -267,6 +268,7 @@ class peakTreeBuffer():
         self.range = self.f.variables['range'][:] 
         #self.velocity = self.f.variables['velocity'][:] 
         self.velocity = self.f.variables['velocity_bins'][:] 
+
         self.cal_constant = float(self.f.cal_constant[:-3])
  
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
@@ -276,6 +278,41 @@ class peakTreeBuffer():
             self.indices = self.f.variables['locator_mask'][:]
             self.spectra = self.f.variables['spectra'][:]
 
+
+    def load_newkazr_file(self, filename, load_to_ram=False): 
+        """load a kazr file
+ 
+        Args:
+            filename: specify file
+        """ 
+        self.type = 'kazr_new' 
+        self.f = netCDF4.Dataset(filename, 'r') 
+        print('loaded file ', filename) 
+        print('keys ', self.f.variables.keys()) 
+        #self.timestamps = self.f.variables['timestamp'][:] 
+        time_offset = self.f.variables['time_offset']
+        self.timestamps = self.f.variables['base_time'][:] + time_offset
+        self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0 
+        self.range = self.f.variables['range'][:] 
+        #self.velocity = self.f.variables['velocity'][:] 
+        self.nyquist = self.f.variables['nyquist_velocity'][:] 
+        assert np.all(self.nyquist[0] == self.nyquist)
+        self.no_fft = self.f.dimensions["spectrum_n_samples"].size
+        vel_res = 2 * self.nyquist[0] / float(self.no_fft)
+        self.velocity = np.linspace(-self.nyquist[0] + (0.5 * vel_res),
+                                    +self.nyquist[0] - (0.5 * vel_res),
+                                    self.no_fft)
+ 
+        self.begin_dt = h.ts_to_dt(self.timestamps[0])
+
+        self.cal_constant = self.f.variables['r_calib_radar_constant_h'][:]
+        assert self.cal_constant.shape[0] == 1
+
+        if load_to_ram == True:
+            self.spectra_in_ram = True
+            #self.Z = self.f.variables['spectra'][:]
+            self.indices = self.f.variables['spectrum_index'][:]
+            self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
 
     def load_peako_file(self, filename):
         """
@@ -358,7 +395,7 @@ class peakTreeBuffer():
         """
 
         peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
-        print('using peak_finding_params', peak_finding_params)
+        # print('using peak_finding_params', peak_finding_params)
 
         if type(sel_ts) is tuple and type(sel_range) is tuple:
             it, sel_ts = sel_ts
@@ -448,19 +485,20 @@ class peakTreeBuffer():
             
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
+            
 
-            spectrum['specZ'] = specZ[::-1]
+            spectrum['specZ'] = specZ.copy()
             spectrum['vel'] = self.velocity
             
-            spectrum['specZ_mask'] = specZ_mask[::-1]
-            spectrum['specSNRco'] = specSNRco[::-1]
-            spectrum['specSNRco_mask'] = specSNRco_mask[::-1]
-            spectrum['specLDR'] = specLDR[::-1]
-            spectrum['specLDR_mask'] = specLDR_mask[::-1]
+            spectrum['specZ_mask'] = specZ_mask.copy()
+            spectrum['specSNRco'] = specSNRco.copy()
+            spectrum['specSNRco_mask'] = specSNRco_mask.copy()
+            spectrum['specLDR'] = specLDR.copy()
+            spectrum['specLDR_mask'] = specLDR_mask.copy()
             
-            spectrum['specZcx'] = specZcx[::-1]
+            spectrum['specZcx'] = specZcx.copy()
             # spectrum['specZcx_mask'] = np.logical_or(spectrum['specZ_mask'], spectrum['specLDR_mask'])
-            spectrum['specZcx_mask'] =  specZcx_mask[::-1]
+            spectrum['specZcx_mask'] =  specZcx_mask.copy()
 
             # print('test specZcx calc')
             # print(spectrum['specZcx_mask'])
@@ -501,7 +539,7 @@ class peakTreeBuffer():
 
             #                                     deep copy of dict 
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-
+            
             return travtree, spectrum
 
         elif self.type == 'peakTree':
@@ -555,7 +593,7 @@ class peakTreeBuffer():
                 else:
                     index = self.f.variables['locator_mask'][it,ir]
                     specZ = h.z2lin(self.f.variables['spectra'][index,:])
-                    specZ = self.f.variables['spectra'][it,ir,:] 
+                    #specZ = self.f.variables['spectra'][it,ir,:] 
                 no_averages = 1 
                 specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
                 specZ_mask = specZ == 0. 
@@ -606,6 +644,99 @@ class peakTreeBuffer():
             specSNRco_mask = specZ.copy() 
  
  
+            spectrum = { 
+                'ts': self.timestamps[it], 'range': self.range[ir],  
+                'vel': self.velocity, 
+                'specZ': specZ, 'noise_thres': noise_thres, 
+                'specZ_mask': specZ_mask, 
+                'no_temp_avg': no_averages, 
+                'specSNRco': specSNRco, 
+                'specSNRco_mask': specSNRco_mask 
+            } 
+ 
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                spectrum['vel'] = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask']
+                for k in keys_to_roll:
+                    spectrum[k] = np.concatenate((
+                        spectrum[k][-roll_velocity:], 
+                        spectrum[k][:-roll_velocity]))
+
+            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
+            return travtree, spectrum 
+
+
+        elif self.type == 'kazr_new': 
+
+            self.indices = self.f.variables['spectrum_index'][:]
+            self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
+             
+            if not temporal_average:
+                if self.spectra_in_ram:
+                    index = self.indices[it,ir]
+                    specZ = h.z2lin(self.spectra[index,:])
+                else:
+                    index = self.f.variables['spectrum_index'][it,ir]
+                    specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][index,:])
+                    # specZ = self.f.variables['spectra'][it,ir,:] 
+                no_averages = 1 
+                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                specZ_mask = specZ == 0. 
+            else:
+                if self.spectra_in_ram:
+                    indices = self.indices[it_b:it_e+1,ir].tolist()
+                    #print(indices)
+                    indices = [i for i in indices if i is not None]
+                    if indices:
+                        specZ = h.z2lin(self.spectra[indices,:])
+                    else:
+                        #empty spectrum
+                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
+                else: 
+                    indices = self.f.variables['spectrum_index'][it_b:it_e+1,ir].tolist()
+                    indices = [i for i in indices if i is not None]
+                    if indices:
+                        specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][indices,:])
+                    else:
+                        #empty spectrum
+                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
+
+                no_averages = specZ.shape[0] 
+                specZ = np.average(specZ, axis=0)
+                specZ = specZ * h.z2lin(self.cal_constant) * self.range[ir]**2
+                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)  
+ 
+            noise = h.estimate_noise(specZ, no_averages) 
+            #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
+            #    h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean']), 
+            #    noise['no_noise_bins'])) 
+            noise_mean = noise['noise_mean'] 
+            #noise_thres = noise['noise_sep'] 
+            noise_thres = noise['noise_mean']*2
+ 
+            if np.any(peak_finding_params['vel_smooth']):
+                #print('smoothed spectrum')
+                if isinstance(peak_finding_params['vel_smooth'],(list,np.ndarray)):
+                    convol_window = peak_finding_params['vel_smooth']
+                else:
+                    convol_window = np.array([0.5,0.7,1,0.7,0.5])/3.4
+                specZ = np.convolve(specZ,  
+                                    convol_window,
+                                    mode='same') 
+             
+ 
+            specSNRco = specZ/noise_mean 
+            specSNRco_mask = specZ.copy() 
+ 
+            print('Z', h.lin2z(specZ))
+
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
                 'vel': self.velocity, 
@@ -866,8 +997,6 @@ class peakTreeBuffer():
                         spectrum[k][:-roll_velocity]))
 
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
-            #print(travtree.keys())
-            #exit()
             return travtree, spectrum 
 
     #@profile
