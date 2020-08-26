@@ -40,6 +40,8 @@
     vel_smooth = true
     thres_factor_co = 6.0 # supress spurious peaks introduced by tails
     thres_factor_cx = 3.0
+    span = 0.05
+    smooth_polyorder = 1
 
 
 [Polarstern]

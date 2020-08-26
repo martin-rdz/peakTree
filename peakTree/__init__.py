@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 
 from operator import itemgetter
 from numba import jit
+
+import scipy.signal
 #import peakTree.fast_funcs as fast_funcs
 
 
@@ -477,13 +479,25 @@ class peakTreeBuffer():
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
-            if np.any(peak_finding_params['vel_smooth']):
-                #print('smoothed spectrum')
-                if 'vel_smooth' in peak_finding_params:
+
+            if 'span' in peak_finding_params:
+                # TODO: figure out why teresa uses len(velbins) and not /delta_v
+                window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
+                print('window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
+                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+            else:
+                if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
+                    print('vel_smooth based on list')
                     convol_window = peak_finding_params['vel_smooth']
-                else:
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
+                elif 'vel_smooth' in peak_finding_params:
                     convol_window = np.array([0.5,1,0.5])/2.0
-                specZ = np.convolve(specZ, convol_window, mode='same')
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
+                else:
+                    print("! no smoothing applied")
+
             
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}

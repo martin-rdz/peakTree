@@ -54,6 +54,10 @@ def fill_with(array, mask, fill):
     return filled
 
 
+def round_odd(f):
+    return int(np.ceil(f/2.) * 2 + 1)
+
+
 def flatten(xs):
     """flatten inhomogeneous deep lists
     e.g. ``[[1,2,3],4,5,[6,[7,8],9],10]``
