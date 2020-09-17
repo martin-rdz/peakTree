@@ -231,9 +231,9 @@ class peakTreeBuffer():
 
         if load_to_ram == True:
             self.spectra_in_ram = True
-            self.Z = self.f.variables['Z'][:]
-            self.LDR = self.f.variables['LDR'][:]
-            self.SNRco = self.f.variables['SNRco'][:]
+            self.Z = self.f.variables['Z'][:].filled()
+            self.LDR = self.f.variables['LDR'][:].filled()
+            self.SNRco = self.f.variables['SNRco'][:].filled()
 
 
 
@@ -449,14 +449,20 @@ class peakTreeBuffer():
                     no_averages = specZ_2d.shape[1]
                     specLDR_2d = self.LDR[:,ir,it_b:it_e+1][:]
                     specZcx_2d = specZ_2d*specLDR_2d
-                    specZcx = specZcx_2d.mean(axis=1)
-                    specZ = specZ_2d.mean(axis=1)
+                    # np.average is slightly faster than .mean
+                    #specZcx = specZcx_2d.mean(axis=1)
+                    specZcx = np.average(specZcx_2d, axis=1)
+                    #specZ = specZ_2d.mean(axis=1)
+                    specZ = np.average(specZ_2d, axis=1)
                     specLDR = specZcx/specZ
-                    #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1]
-                    specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][:]
-                    specSNRco = specSNRco_2d.mean(axis=1)
+                    #specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][:]
+                    #specSNRco = specSNRco_2d.mean(axis=1)
+                    #specSNRco = np.average(specSNRco_2d, axis=1)
                     # specZ, specZcx, specLDR, specSNRco, no_averages = fast_funcs.load_spec_mira(
                     #     self.Z, self.LDR, self.SNRco, ir, it_b, it_e)
+                    assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
+                    assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
+                    assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
                 else:
                     specZ = self.f.variables['Z'][:,ir,it_b:it_e+1][:]
                     no_averages = specZ.shape[1]
@@ -466,24 +472,42 @@ class peakTreeBuffer():
                     specZ = specZ.mean(axis=1)
 
                     specLDR = specZcx/specZ
-                    specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][:]
-                    specSNRco = specSNRco.mean(axis=1)
+                    #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][:]
+                    #specSNRco = specSNRco.mean(axis=1)
 
+                #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
+                #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
+
+                # fill values can be both nan and 0
                 specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
-                specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
-                specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-                specSNRco_mask = specSNRco == 0.
+                empty_spec = np.all(specZ_mask)
+                if empty_spec:
+                    specZcx_mask = specZ_mask.copy()
+                    specLDR_mask = specZ_mask.copy()
+                elif np.all(np.isnan(specZcx)):
+                    specZcx_mask = np.ones_like(specZcx).astype(bool)
+                    specLDR_mask = np.ones_like(specLDR).astype(bool)
+                else:
+                    specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
+                    specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+                    # maybe omit one here?
+                assert np.all(specZcx_mask == specLDR_mask), f'masks not equal {specZcx} {specLDR}'
+                #specSNRco_mask = specSNRco == 0.
                 # print('specZ', specZ.shape, specZ)
                 # print('specLDR', specLDR.shape, specLDR)
                 # print('specSNRco', specSNRco.shape, specSNRco)
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if np.all(specZ_mask) else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
+            noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
+            
+            #print('SNR man', specZ[120:-120]/noise_thres)
+            #print('SNR  nc', specSNRco[120:-120])
+            #print('man/nc ', specZ[120:-120]/noise_thres/specSNRco[120:-120])
 
             if 'span' in peak_finding_params:
                 # TODO: figure out why teresa uses len(velbins) and not /delta_v
                 window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
-                print('window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
+                log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
                 specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
             else:
                 if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
@@ -506,8 +530,8 @@ class peakTreeBuffer():
             spectrum['vel'] = self.velocity
             
             spectrum['specZ_mask'] = specZ_mask[:]
-            spectrum['specSNRco'] = specSNRco[:]
-            spectrum['specSNRco_mask'] = specSNRco_mask[:]
+            #spectrum['specSNRco'] = specSNRco[:]
+            #spectrum['specSNRco_mask'] = specSNRco_mask[:]
             spectrum['specLDR'] = specLDR[:]
             spectrum['specLDR_mask'] = specLDR_mask[:]
             
@@ -518,8 +542,8 @@ class peakTreeBuffer():
             # print('test specZcx calc')
             # print(spectrum['specZcx_mask'])
             # print(spectrum['specZcx'])
-            spectrum['specSNRcx'] = spectrum['specSNRco']*spectrum['specLDR']
-            spectrum['specSNRcx_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specLDR_mask'])
+            #spectrum['specSNRcx'] = spectrum['specSNRco']*spectrum['specLDR']
+            #spectrum['specSNRcx_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specLDR_mask'])
 
             thres_Zcx = np.nanmin(spectrum['specZcx'])*h.z2lin(peak_finding_params['thres_factor_cx'])
             Zcx_mask = np.logical_or(spectrum['specZcx'] < thres_Zcx, ~np.isfinite(spectrum['specZcx']))
@@ -546,6 +570,10 @@ class peakTreeBuffer():
                 keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask', 
                                 'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
                                 'specSNRcx', 'specSNRcx_mask', 'specLDRmasked',
+                                'specZcx_validcx', 'specZ_validcx']
+                keys_to_roll = ['specZ', 'specZ_mask',  
+                                'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
+                                'specLDRmasked',
                                 'specZcx_validcx', 'specZ_validcx']
                 for k in keys_to_roll:
                     spectrum[k] = np.concatenate((
@@ -1087,8 +1115,13 @@ class peakTreeBuffer():
                         ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
                         prominence[it,ir,k] = h.lin2z(val['prominence'])
 
-        filename = outdir + '{}_{}_peakTree.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'),
-                                                        self.shortname)
+        if 'add_to_fname' in self.settings:
+            add_to_fname = self.settings['add_to_fname']
+            log.info(f'add to fname {add_to_fname}')
+        else:
+            add_to_fname = ''
+        filename = outdir + '{}_{}_peakTree{}.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'),
+                                                          self.shortname, add_to_fname)
         log.info('output filename {}'.format(filename))
         
         with netCDF4.Dataset(filename, 'w', format='NETCDF4') as dataset:

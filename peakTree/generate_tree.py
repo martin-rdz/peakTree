@@ -309,7 +309,8 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #spectrum['specZco'] = spectrum['specZ']/(1+spectrum['specLDR'])
     #spectrum['specZcx'] = (spectrum['specLDR']*spectrum['specZ'])/(1+spectrum['specLDR'])
 
-    ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+    #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
     prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
@@ -384,7 +385,8 @@ def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z[bounds[0]:bounds[1]+1])
     moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
     
-    ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+    #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
     prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]

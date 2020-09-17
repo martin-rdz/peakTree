@@ -36,8 +36,10 @@
     #roll_velocity = 65 # for 512 bins = 7.92 m/s
     roll_velocity = 98 # = 6.56 m/s
     station_altitude = 9
+    add_to_fname = ''
 [Lacros_Pun.settings.peak_finding_params]
-    vel_smooth = true
+    #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
+    #vel_smooth = [0.33,0.33,0.33]
     thres_factor_co = 6.0 # supress spurious peaks introduced by tails
     thres_factor_cx = 3.0
     span = 0.05
