@@ -6,6 +6,10 @@ Software for converting multi-peaked (cloud) radar Doppler spectra into a binary
 
 Technical documentation is available at [peakTree-doc](https://martin-rdz.github.io/peakTree-doc/)
 
+See also 
+Radenz, M., Bühl, J., Seifert, P., Griesche, H., and Engelmann, R.: peakTree: a framework for structure-preserving radar Doppler spectra analysis, Atmos. Meas. Tech., 12, 4813–4828, https://doi.org/10.5194/amt-12-4813-2019, 2019.
+
+
 ### Requirements
 
 peakTree requires python3 with following packages:
@@ -79,5 +83,5 @@ python3 convert_to_json.py output/20170629_0830_Pol_peakTree.nc4 output/20170629
 ```
 
 ### License
-Copyright 2018, Martin Radenz
+Copyright 2020, Martin Radenz
 [MIT License](<http://www.opensource.org/licenses/mit-license.php>)
