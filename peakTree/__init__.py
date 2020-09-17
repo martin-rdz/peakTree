@@ -500,12 +500,30 @@ class peakTreeBuffer():
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
             
-            #print('SNR man', specZ[120:-120]/noise_thres)
-            #print('SNR  nc', specSNRco[120:-120])
-            #print('man/nc ', specZ[120:-120]/noise_thres/specSNRco[120:-120])
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                self.velocity = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+
+                specZ = np.concatenate((specZ[-roll_velocity:], 
+                                        specZ[:-roll_velocity]))
+                specLDR = np.concatenate((specLDR[-roll_velocity:], 
+                                          specLDR[:-roll_velocity]))
+                specZcx = np.concatenate((specZcx[-roll_velocity:], 
+                                          specZcx[:-roll_velocity]))
+                specZ_mask = np.concatenate((specZ_mask[-roll_velocity:], 
+                                             specZ_mask[:-roll_velocity]))
+                specZcx_mask = np.concatenate((specZcx_mask[-roll_velocity:], 
+                                               specZcx_mask[:-roll_velocity]))
+                specLDR_mask = np.concatenate((specLDR_mask[-roll_velocity:], 
+                                               specLDR_mask[:-roll_velocity]))
 
             if 'span' in peak_finding_params:
-                # TODO: figure out why teresa uses len(velbins) and not /delta_v
                 window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
                 log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
                 specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
@@ -554,31 +572,9 @@ class peakTreeBuffer():
             spectrum['specZcx_validcx'] = spectrum['specZcx'].copy()
             spectrum['specZcx_validcx'][Zcx_mask] = 0.0
             spectrum['specZ_validcx'] = spectrum['specZ'].copy()
-            spectrum['specZcx_validcx'][Zcx_mask] = 0.0
+            spectrum['specZ_validcx'][Zcx_mask] = 0.0
 
             spectrum['decoupling'] = decoupling
-            
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                spectrum['vel'] = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
-                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask', 
-                                'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
-                                'specSNRcx', 'specSNRcx_mask', 'specLDRmasked',
-                                'specZcx_validcx', 'specZ_validcx']
-                keys_to_roll = ['specZ', 'specZ_mask',  
-                                'specLDR', 'specLDR_mask', 'specZcx', 'specZcx_mask',
-                                'specLDRmasked',
-                                'specZcx_validcx', 'specZ_validcx']
-                for k in keys_to_roll:
-                    spectrum[k] = np.concatenate((
-                        spectrum[k][-roll_velocity:], 
-                        spectrum[k][:-roll_velocity]))
 
             #                                     deep copy of dict 
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
@@ -672,15 +668,38 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
-            if np.any(peak_finding_params['vel_smooth']):
-                #print('smoothed spectrum')
-                if isinstance(peak_finding_params['vel_smooth'],(list,np.ndarray)):
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                self.velocity = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+
+                specZ = np.concatenate((specZ[-roll_velocity:], 
+                                        specZ[:-roll_velocity]))
+                specZ_mask = np.concatenate((specZ_mask[-roll_velocity:], 
+                                             specZ_mask[:-roll_velocity]))
+
+
+            if 'span' in peak_finding_params:
+                window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
+                log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+            else:
+                if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
+                    print('vel_smooth based on list')
                     convol_window = peak_finding_params['vel_smooth']
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
+                elif 'vel_smooth' in peak_finding_params:
+                    convol_window = np.array([0.5,1,0.5])/2.0
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
                 else:
-                    convol_window = np.array([0.5,0.7,1,0.7,0.5])/3.4
-                specZ = np.convolve(specZ,  
-                                    convol_window,
-                                    mode='same') 
+                    print("! no smoothing applied")
              
  
             specSNRco = specZ/noise_mean 
@@ -696,21 +715,6 @@ class peakTreeBuffer():
                 'specSNRco': specSNRco, 
                 'specSNRco_mask': specSNRco_mask 
             } 
- 
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                spectrum['vel'] = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
-                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask']
-                for k in keys_to_roll:
-                    spectrum[k] = np.concatenate((
-                        spectrum[k][-roll_velocity:], 
-                        spectrum[k][:-roll_velocity]))
 
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
             return travtree, spectrum 
@@ -765,15 +769,37 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
-            if np.any(peak_finding_params['vel_smooth']):
-                #print('smoothed spectrum')
-                if isinstance(peak_finding_params['vel_smooth'],(list,np.ndarray)):
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
+                    roll_velocity = self.settings['roll_velocity']
+                vel_step = self.velocity[1] - self.velocity[0]
+                self.velocity = np.concatenate((
+                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
+                                self.velocity[0] - vel_step, 
+                                num=roll_velocity), 
+                    self.velocity[:-roll_velocity]))
+
+                specZ = np.concatenate((specZ[-roll_velocity:], 
+                                        specZ[:-roll_velocity]))
+                specZ_mask = np.concatenate((specZ_mask[-roll_velocity:], 
+                                             specZ_mask[:-roll_velocity]))
+
+            if 'span' in peak_finding_params:
+                window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
+                log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+            else:
+                if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
+                    print('vel_smooth based on list')
                     convol_window = peak_finding_params['vel_smooth']
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
+                elif 'vel_smooth' in peak_finding_params:
+                    convol_window = np.array([0.5,1,0.5])/2.0
+                    print('convol_window ', convol_window)
+                    specZ = np.convolve(specZ, convol_window, mode='same')
                 else:
-                    convol_window = np.array([0.5,0.7,1,0.7,0.5])/3.4
-                specZ = np.convolve(specZ,  
-                                    convol_window,
-                                    mode='same') 
+                    print("! no smoothing applied")
              
  
             specSNRco = specZ/noise_mean 
@@ -790,21 +816,6 @@ class peakTreeBuffer():
                 'specSNRco': specSNRco, 
                 'specSNRco_mask': specSNRco_mask 
             } 
- 
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                spectrum['vel'] = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
-                keys_to_roll = ['specZ', 'specZ_mask', 'specSNRco', 'specSNRco_mask']
-                for k in keys_to_roll:
-                    spectrum[k] = np.concatenate((
-                        spectrum[k][-roll_velocity:], 
-                        spectrum[k][:-roll_velocity]))
 
             travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
             return travtree, spectrum 
@@ -1057,6 +1068,11 @@ class peakTreeBuffer():
             timestamps_grid = time_grid[2]
         else:
             timestamps_grid = self.timestamps
+
+        assert self.spectra_in_ram == True
+        # self.Z = self.f.variables['Z'][:]
+        # self.LDR = self.f.variables['LDR'][:]
+        # self.SNRco = self.f.variables['SNRco'][:]
 
         max_no_nodes=self.settings['max_no_nodes']
         Z = np.zeros((timestamps_grid.shape[0], self.range.shape[0], max_no_nodes))
