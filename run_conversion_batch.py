@@ -31,7 +31,7 @@ date = datetime.datetime.strptime(args.date, '%Y%m%d')
 path = 'data/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
 
 files = os.listdir(path)
-files = [f for f in files if '.nc' in f]
+files = [f for f in files if ('.nc' in f or '.cdf' in f)]
 print(files)
 
 outpath = 'output/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
@@ -48,6 +48,8 @@ for f in files[:]:
     print('now doing ', f)
     if args.config == 'kazr_mosaic':
         pTB.load_newkazr_file(path+f, load_to_ram=True)
+    if args.config == 'kazr_baecc':
+        pTB.load_kazr_file(path+f, load_to_ram=True)
     else:
         pTB.load_spec_file(path+f, load_to_ram=True)
     pTB.assemble_time_height(outpath)

@@ -499,12 +499,13 @@ class peakTreeBuffer():
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
-            
+
+            velocity = self.velocity
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
                     roll_velocity = self.settings['roll_velocity']
                 vel_step = self.velocity[1] - self.velocity[0]
-                self.velocity = np.concatenate((
+                velocity = np.concatenate((
                     np.linspace(self.velocity[0] - roll_velocity * vel_step, 
                                 self.velocity[0] - vel_step, 
                                 num=roll_velocity), 
@@ -545,7 +546,7 @@ class peakTreeBuffer():
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
 
             spectrum['specZ'] = specZ[:]
-            spectrum['vel'] = self.velocity
+            spectrum['vel'] = velocity
             
             spectrum['specZ_mask'] = specZ_mask[:]
             #spectrum['specSNRco'] = specSNRco[:]
@@ -668,11 +669,12 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
+            velocity = self.velocity
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
                     roll_velocity = self.settings['roll_velocity']
                 vel_step = self.velocity[1] - self.velocity[0]
-                self.velocity = np.concatenate((
+                velocity = np.concatenate((
                     np.linspace(self.velocity[0] - roll_velocity * vel_step, 
                                 self.velocity[0] - vel_step, 
                                 num=roll_velocity), 
@@ -708,7 +710,7 @@ class peakTreeBuffer():
  
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
-                'vel': self.velocity, 
+                'vel': velocity, 
                 'specZ': specZ, 'noise_thres': noise_thres, 
                 'specZ_mask': specZ_mask, 
                 'no_temp_avg': no_averages, 
@@ -769,11 +771,12 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
+            velocity = self.velocity
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
                     roll_velocity = self.settings['roll_velocity']
                 vel_step = self.velocity[1] - self.velocity[0]
-                self.velocity = np.concatenate((
+                velocity = np.concatenate((
                     np.linspace(self.velocity[0] - roll_velocity * vel_step, 
                                 self.velocity[0] - vel_step, 
                                 num=roll_velocity), 
@@ -809,7 +812,7 @@ class peakTreeBuffer():
 
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
-                'vel': self.velocity, 
+                'vel': velocity, 
                 'specZ': specZ, 'noise_thres': noise_thres, 
                 'specZ_mask': specZ_mask, 
                 'no_temp_avg': no_averages, 
