@@ -500,7 +500,7 @@ class peakTreeBuffer():
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
 
-            velocity = self.velocity
+            velocity = self.velocity.copy()
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
                     roll_velocity = self.settings['roll_velocity']
@@ -509,7 +509,7 @@ class peakTreeBuffer():
                     np.linspace(self.velocity[0] - roll_velocity * vel_step, 
                                 self.velocity[0] - vel_step, 
                                 num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
+                                self.velocity[:-roll_velocity]))
 
                 specZ = np.concatenate((specZ[-roll_velocity:], 
                                         specZ[:-roll_velocity]))
