@@ -73,7 +73,8 @@ pTB.assemble_time_height('output/')
 
 plot a peakTree netcdf file
 ```
-python3 plot2d.py output/20170629_0830_Pol_peakTree.nc4 --range-interval 400-5000 --no-nodes 2
+python3 plot2d.py output/20170629_0830_Pol_peakTree.nc4 --range-interval 400,5000 --no-nodes 2
+python3 plot2d.py output/20181216_1510_Pun_peakTree.nc4  --no-nodes 2 --plotsubfolder peaktree_limrad --system limrad_peako --range-interval min,3000
 ```
 
 convert a peakTree netcdf file to dictionary format

@@ -174,3 +174,21 @@
     #thres_factor_cx = 3.0 
     LDR = false 
     station_altitude = 10
+
+
+[limrad_peako] 
+    location = "Punta Arenas"
+    shortname = "Pun"
+[limrad_peako.settings] 
+    grid_time = false
+    max_no_nodes = 15 
+    LDR = true 
+    decoupling = -35
+    station_altitude = 22
+[limrad_peako.settings.peak_finding_params]
+    t_avg = 4
+    h_avg = 1
+    span = 0.5
+    smooth_polyorder = 1
+    prom_thres = 1
+    width_thres = 3

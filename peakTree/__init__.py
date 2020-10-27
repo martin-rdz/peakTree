@@ -340,23 +340,34 @@ class peakTreeBuffer():
             self.indices = self.f.variables['spectrum_index'][:]
             self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
 
-    def load_peako_file(self, filename):
+
+    def load_limrad_spec(self, filename, load_to_ram=False):
         """
 
         """
-        self.type = 'peako'
+        self.type = 'limrad_peako'
         self.f = netCDF4.Dataset(filename, 'r')
         print('loaded file ', filename)
         print('keys ', self.f.variables.keys())
         #times = self.f.variables['decimal_time'][:]
         #seconds = times.astype(np.float)*3600.
         #self.timestamps = h.dt_to_ts(datetime.datetime(2014, 2, 21)) + seconds
-        self.timestamps = self.f.variables['unix_time'][:]
-        self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
-        self.range = self.f.variables['range'][:]*1000
-        self.velocity = self.f.variables['Dopplerbins'][:]
+        self.timestamps = self.f.variables['time'][:]
+        self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0 
+        self.range = self.f.variables['range'][:]
+        self.velocity = self.f.variables['velocity_vectors'][:].T
+        print('velocity shape', self.velocity.shape)
+
+        self.rg_offset_chirp = self.f.variables['rg_offsets'][:]
+        print('rg_offset_chirps', self.rg_offset_chirp)
 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
+
+        if load_to_ram == True:
+            self.spectra_in_ram = True
+            self.doppler_spectrum = self.f.variables['doppler_spectrum'][:]
+            self.doppler_spectrum_h = self.f.variables['doppler_spectrum_h'][:]
+            self.covariance_spectrum_re = self.f.variables['covariance_spectrum_re'][:]
 
 
     def load_joyrad_file(self, filename, load_to_ram=False):
@@ -1084,11 +1095,45 @@ class peakTreeBuffer():
             return travtree, spectrum 
 
 
-        elif self.type == 'peako':
-            assert temporal_average == False
+        elif self.type == 'limrad_peako':
+            
+            # average_spectra step
+            t_avg = peak_finding_params['t_avg']
+            h_avg = peak_finding_params['h_avg']
 
-            specZ = h.z2lin(self.f.variables['spectra'][:,ir,it])
-            specZ = specZ*h.z2lin(self.settings['cal_const'])*self.range[ir]**2
+            it_slicer = slice(max(it-t_avg, 0), it+t_avg)
+            ir_slicer = slice(max(ir-h_avg, 0), ir+h_avg)
+            spec_chunk = self.doppler_spectrum[it_slicer,ir_slicer,:]
+            cov_re = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
+
+            spec_chunk_h = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
+            specLDR_chunk = (spec_chunk - (2*cov_re))/(spec_chunk + (2*cov_re))
+            # specZcx_chunk = spec_chunk*specLDR_chunk
+
+            print(it_slicer, ir_slicer, spec_chunk.shape)
+            specZ = np.average(spec_chunk, axis=(0,1))
+            specLDR = np.average(specLDR_chunk, axis=(0,1))
+            print(specZ.shape)
+
+            #specLDR = specZcx/specZ
+
+            ind_chirp = np.where(self.rg_offset_chirp >= ir)[0][0]
+            print('we are at chirp ', ind_chirp)
+
+            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
+                raise ValueError('not implemented for limrad_peako as dealiasing is done by preprocesisng')
+
+            # smooth_spectra step
+            # TODO: figure out why teresa uses len(velbins) and not /delta_v
+            assert 'span' in peak_finding_params, \
+                "span and smooth_polyorder have to be defined in config"
+            window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1,ind_chirp]-self.velocity[0,ind_chirp]))
+            print('window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
+            specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+
+            #specZ = h.z2lin(self.f.variables['spectra'][:,ir,it])
+            #specZ = specZ*h.z2lin(self.settings['cal_const'])*self.range[ir]**2
+
             specZ_mask = specZ == 0.
             noise = h.estimate_noise(specZ)
             # some debuggung for the noise estimate
@@ -1105,46 +1150,48 @@ class peakTreeBuffer():
             #print('peako noise level ', self.f.variables['noiselevel'][ir,it])
             #print('calibrated ', h.lin2z(h.z2lin(self.f.variables['noiselevel'][ir,it])*h.z2lin(self.settings['cal_const'])*self.range[ir]**2))
             #noise_thres = noise['noise_sep']
-            noise_thres = noise['noise_mean']*3
+            # noise_thres = noise['noise_mean']*3
             noise_mean = noise['noise_mean']
+            noise_thres = np.min(specZ)
 
             specSNRco = specZ/noise_mean
-            specSNRco_mask = specZ.copy()
+            specSNRco_mask = specZ_mask.copy()
             print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
                 h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean'])))
 
+            specZcx = specZ*specLDR
+            specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
+            #specLDR = specZcx/specZ
+            specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+
+            thres_Zcx = np.nanmin(specZcx)
+            Zcx_mask = np.logical_or(specZcx < thres_Zcx, ~np.isfinite(specZcx))
+            specZcx_validcx = specZcx.copy()
+            specZcx_validcx[Zcx_mask] = 0.0
+            specZ_validcx = specZ.copy()
+            specZ_validcx[Zcx_mask] = 0.0
+
+            specLDRmasked = specLDR.copy()
+            specLDRmasked[Zcx_mask] = np.nan
+
+
             spectrum = {
                 'ts': self.timestamps[it], 'range': self.range[ir], 
-                'vel': self.velocity,
+                'vel': self.velocity[:,ind_chirp],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
+                'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
+                'specLDR': specLDR, 'specLDR_mask': specLDR_mask,
+                'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
+                'specLDRmasked': specLDRmasked,
                 'no_temp_avg': 0,
-                'specSNRco': specSNRco,
-                'specSNRco_mask': specSNRco_mask
+                'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                'decoupling': self.settings['decoupling'],
             }
 
-            def divide_bounds(bounds):
-                """
-                divide_bounds([[10,20],[20,25],[25,30],[40,50]]) 
-                => noise_sep [[10, 30], [40, 50]], internal [20, 25]
-                """
-                bounds = list(sorted(h.flatten(bounds)))
-                occ = dict((k, (bounds).count(k)) for k in set(bounds))
-                internal = [k for k in occ if occ[k] == 2]
-                noise_sep = [b for b in bounds if b not in internal]
-                noise_sep = [[noise_sep[i], noise_sep[i+1]] for i in \
-                             range(0, len(noise_sep)-1,2)]
-                return noise_sep, internal
+            travtree = generate_tree.tree_from_spectrum_peako(
+                {**spectrum}, peak_finding_params) 
 
-            left_edges = self.f.variables['left_edge'][:,ir,it].astype(np.int).compressed().tolist()
-            right_edges = self.f.variables['right_edge'][:,ir,it].astype(np.int).compressed().tolist()
-            bounds = list(zip(left_edges, right_edges))
-
-            if not all([e[0]<e[1] for e in bounds]):
-                bounds = []
-            d_bounds = divide_bounds(bounds)
-            print("{} => {} {}".format(bounds, *d_bounds))
-            travtree = tree_from_peako({**spectrum}, *d_bounds)
             return travtree, spectrum
 
 
@@ -1240,8 +1287,12 @@ class peakTreeBuffer():
             dim_time = dataset.createDimension('time', Z.shape[0])
             dim_range = dataset.createDimension('range', Z.shape[1])
             dim_nodes = dataset.createDimension('nodes', Z.shape[2])
-            dim_nodes = dataset.createDimension('vel', self.velocity.shape[0])
+            dim_vel = dataset.createDimension('vel', self.velocity.shape[0])
             dataset.createDimension('mode', 1)
+
+            print(self.velocity.shape)
+            if self.type == 'limrad_peako':
+                dim_chirp = dataset.createDimension('chirp', self.rg_offset_chirp.shape[0])
 
             times = dataset.createVariable('timestamp', np.int32, ('time',))
             times[:] = timestamps_grid.astype(np.int32)
@@ -1264,8 +1315,12 @@ class peakTreeBuffer():
             hg[:] = height
             hg.long_name = 'Height above mean sea level [m]'
 
-            vel = dataset.createVariable('velocity', np.float32, ('vel',))
-            vel[:] = self.velocity.astype(np.float32)
+            if self.type == 'limrad_peako':
+                vel = dataset.createVariable('velocity', np.float32, ('vel','chirp'))
+                vel[:,:] = self.velocity.astype(np.float32)
+            else:
+                vel = dataset.createVariable('velocity', np.float32, ('vel',))
+                vel[:] = self.velocity.astype(np.float32)
             vel.long_name = 'velocity [m/s]'
 
             saveVar(dataset, {'var_name': 'Z', 'dimension': ('time', 'range', 'nodes'),

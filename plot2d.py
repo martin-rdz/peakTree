@@ -18,16 +18,17 @@ parser.add_argument('file', help='path of the file')
 parser.add_argument('--no-nodes', type=int, default=0, help='plot nodes up to this no (including)')
 parser.add_argument('--range-interval', type=str, default='min,10000', help='range to plot. e.g. min,7000, min,max, 500,max')
 parser.add_argument('--time-interval', type=str, default='', help='range to plot. e.g. min,7000, min,max, 500,max')
-parser.add_argument('--subfolder', default='', help='path of the file')
+parser.add_argument('--plotsubfolder', default='', help='path of the plot subfolder')
+parser.add_argument('--system', default='', help='system identifier')
 args = parser.parse_args()
 
-pTB = peakTree.peakTreeBuffer()
+pTB = peakTree.peakTreeBuffer(system=args.system)
 pTB.load_peakTree_file(args.file)
 
-if args.subfolder is '':
+if args.plotsubfolder is '':
     savepath = 'plots/'
 else:
-    savepath = 'plots/{}/'.format(args.subfolder)
+    savepath = 'plots/{}/'.format(args.plotsubfolder)
 if not os.path.isdir(savepath):
     os.makedirs(savepath)
 

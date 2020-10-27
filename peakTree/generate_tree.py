@@ -16,6 +16,8 @@ import toml
 from operator import itemgetter
 from numba import jit
 
+import scipy.signal
+
 log = logging.getLogger('peakTree')
 
 #@profile
@@ -367,7 +369,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     return moments, spectrum
 
 
-@jit(fastmath=True)
+#@jit(fastmath=True)
 def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -408,7 +410,8 @@ def tree_from_spectrum(spectrum, peak_finding_params):
             'specZ': specZ, 'noise_thres': specZ.min()}
 
     Args:
-        spectrum (dict): spectra dict
+        spectrum (dict): spectra
+        peak_finding_params (dict): either from config or manually overwritten 
     Returns:
         traversed tree
     """
@@ -523,3 +526,197 @@ def tree_from_peako(spectrum, noise_sep, internal):
         traversed = {}
     return traversed
 
+
+def peak_width(spectrum, pks, left_edge, right_edge, rel_height=0.5):
+    """
+    Calculates the width (at half height) of each peak in a signal.
+
+    Args:
+        spectrum: 1-D ndarray, input signal
+        pks: 1-D ndarray, indices of the peak locations
+        left_edge: 1-D ndarray, indices of the left edges of each peak
+        right_edge: 1-D ndarray, indices of the right edges of each peak
+        rel_height: float, at which relative height compared to the peak height the width should be computed.
+             Default is 0.5, i.e. the peak width at half-height is computed.
+
+    Returns:
+        width: array containing the width in # of Doppler bins
+    """
+    # initialize empty lists
+    left_ps = []
+    right_ps = []
+    # calculate the reference height for each peak, i.e. half height if rel_height is set to 0.5
+    try:
+        ref_height = spectrum[left_edge] + (spectrum[pks] - spectrum[left_edge]) * rel_height
+    except IndexError:
+        raise IndexError('Likely there is an index out of bounds or empty. left edge, right edge, pks:',
+                         left_edge, right_edge, pks)
+    # loop over all peaks
+    for i in range(len(pks)):
+        # if y-value of the left peak edge is greater than the reference height, left edge is used as left position
+        if spectrum[left_edge[i]] >= ref_height[i]:
+            left_ps.append(left_edge[i])
+        # else the maximum index in the interval from left edge to peak with y-value smaller/equal to the
+        # reference height is used
+        else:
+            left_ps.append(max(np.where(spectrum[left_edge[i]:pks[i]] <= ref_height[i])[0]) + left_edge[i])
+        # if y-value of the right peak edge is greater than the reference height, right edge is used as right
+        # position
+        if spectrum[right_edge[i]] >= ref_height[i]:
+            right_ps.append(right_edge[i])
+        # else the minimum index in the interval from peak to right edge smaller/equal the reference height is used
+        else:
+            # same as with left edge but in other direction; the index of the peak has to be added
+            right_ps.append(min(np.where(spectrum[pks[i]:right_edge[i] + 1] <= ref_height[i])[0]) + pks[i])
+
+    width = [j - i for i, j in zip(left_ps, right_ps)]
+    # calculate width in relation to the indices of the left and right position (edge)
+    return np.asarray(width)
+
+
+def find_edges(spectrum, fill_value, peak_locations):
+    """
+    Find the indices of left and right edges of peaks in a spectrum
+
+    Args:
+        spectrum: a single spectrum in linear units
+        peak_locations: indices of peaks detected for this spectrum
+        fill_value: The fill value which indicates the spectrum is below noise floor
+
+    Returns:
+        left_edges: list of indices of left edges,
+        right_edges: list of indices of right edges
+    """
+    left_edges = []
+    right_edges = []
+
+    for p_ind in range(len(peak_locations)):
+        # start with the left edge
+        p_l = peak_locations[p_ind]
+
+        # set first estimate of left edge to last bin before the peak
+        closest_below_noise_left = np.where(spectrum[0:p_l] == fill_value)
+        if len(closest_below_noise_left[0]) == 0:
+            closest_below_noise_left = 0
+        else:
+            # add 1 to get the first bin of the peak which is not fill_value
+            closest_below_noise_left = max(closest_below_noise_left[0]) + 1
+
+        if p_ind == 0:
+            # if this is the first peak, the left edge is the closest_below_noise_left
+            left_edge = closest_below_noise_left
+        elif peak_locations[p_ind - 1] > closest_below_noise_left:
+            # merged peaks
+            left_edge = np.argmin(spectrum[peak_locations[p_ind - 1]: p_l])
+            left_edge = left_edge + peak_locations[p_ind - 1]
+        else:
+            left_edge = closest_below_noise_left
+
+        # Repeat for right edge
+        closest_below_noise_right = np.where(spectrum[p_l:-1] == fill_value)
+        if len(closest_below_noise_right[0]) == 0:
+            # if spectrum does not go below noise (fill value), set it to the last bin
+            closest_below_noise_right = len(spectrum) - 1
+        else:
+            # subtract one to obtain the last index of the peak
+            closest_below_noise_right = min(closest_below_noise_right[0]) + p_l - 1
+
+        # if this is the last (rightmost) peak, this first guess is the right edge
+        if p_ind == (len(peak_locations) - 1):
+            right_edge = closest_below_noise_right
+
+        elif peak_locations[p_ind + 1] < closest_below_noise_right:
+            right_edge = np.argmin(spectrum[p_l:peak_locations[p_ind + 1]]) + p_l
+        else:
+            right_edge = closest_below_noise_right
+
+        left_edges.append(np.int(left_edge))
+        right_edges.append(np.int(right_edge))
+
+    return left_edges, right_edges
+
+
+def tree_from_spectrum_peako(spectrum, peak_finding_params):
+    """generate the tree and return a traversed version use peako-like peakfinder
+
+    Args:
+        spectrum (dict): spectra
+        peak_finding_params (dict): either from config or manually overwritten 
+    Returns:
+        traversed tree
+    """
+
+    max_peaks = 15
+
+    #print(spectrum['specZ'])
+    locs, props = scipy.signal.find_peaks(
+        h.lin2z(spectrum['specZ']), 
+        prominence=peak_finding_params['prom_thres'])
+    print('find_peaks locs, props', locs, props)
+
+    le, re = find_edges(spectrum['specZ'], 0.0, locs)
+    print('le, re ', le, re)
+
+    width = peak_width(spectrum['specZ'], locs, le, re)
+    print('width ', width)
+
+    locs = locs[width > peak_finding_params['width_thres']]
+    le = np.array(le)[width > peak_finding_params['width_thres']]
+    re = np.array(re)[width > peak_finding_params['width_thres']]
+    # when locs are sorted, this cuts the rightmost peaks
+    #locs = locs[0: max_peaks] if len(locs) > max_peaks else locs
+
+    print('final locs ', locs, le, re)
+
+    #
+    # and nwo the peaktree part
+    # take ideas from the first implementation
+    #
+
+    def divide_bounds(bounds):
+        """
+        divide_bounds([[10,20],[20,25],[25,30],[40,50]]) 
+        => noise_sep [[10, 30], [40, 50]], internal [20, 25]
+        """
+        bounds = list(sorted(h.flatten(bounds)))
+        occ = dict((k, (bounds).count(k)) for k in set(bounds))
+        internal = [k for k in occ if occ[k] == 2]
+        noise_sep = [b for b in bounds if b not in internal]
+        noise_sep = [[noise_sep[i], noise_sep[i+1]] for i in \
+                        range(0, len(noise_sep)-1,2)]
+        return noise_sep, internal
+
+    bounds = list(zip(le, re))
+    print('bounds ',bounds)
+
+    if not all([e[0]<e[1] for e in bounds]):
+        bounds = []
+    noise_sep, internal = divide_bounds(bounds)
+    print("{} => {} {}".format(bounds, noise_sep, internal))
+
+    if noise_sep:
+        t = Node((noise_sep[0][0], noise_sep[-1][-1]), 
+                spectrum['specZ'][noise_sep[0][0]:noise_sep[-1][-1]+1], 
+                spectrum['noise_thres'], peak_finding_params['prom_thres'], root=True)
+        for peak_pair in peak_pairs_to_call(noise_sep):
+            # print('peak pair', peak_pair)
+            t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+        for m in internal:
+            t.add_min(m, spectrum['specZ'][m], ignore_prom=True)
+
+        print(t)
+        traversed = coords_to_id(list(traverse(t, [0])))
+        for i in traversed.keys():
+            print(i, traversed[i]['bounds'], h.lin2z(traversed[i]['thres']))
+            #moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            traversed[i].update(moments)
+            #print('traversed tree')
+            # if moments['v'] == 0.0 or not np.isfinite(moments['v']):
+            #     print(i, traversed[i])
+            #     input()
+
+        print(print_tree.travtree2text(traversed))
+    else:
+        traversed = {}
+    return traversed
