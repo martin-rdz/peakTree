@@ -435,6 +435,7 @@ class peakTreeBuffer():
                     specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
                 specZ_mask = specZ == 0.
                 #print('specZ.shape', specZ.shape, specZ)
+                empty_spec = np.all(specZ_mask)
                 
                 specLDR_mask = np.isnan(specLDR)
                 specZcx = specZ*specLDR

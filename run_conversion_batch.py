@@ -42,13 +42,16 @@ if not os.path.isdir(outpath):
 pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system=args.config)
 
 # filter for patrics test
-files = [f for f in files if "ldrcorr" in f]
+#files = [f for f in files if "ldrcorr" in f]
+if args.config == 'Lacros_Pun':
+    #files = [f for f in files if "T1300_" in f]
+    files = [f for f in files if "v2.0" in f]
 
-for f in files[:]:
+for f in sorted(files)[:]:
     print('now doing ', f)
-    if args.config == 'kazr_mosaic':
+    if "mosaic" in args.config:
         pTB.load_newkazr_file(path+f, load_to_ram=True)
-    if args.config == 'kazr_baecc':
+    elif args.config == 'kazr_baecc':
         pTB.load_kazr_file(path+f, load_to_ram=True)
     else:
         pTB.load_spec_file(path+f, load_to_ram=True)

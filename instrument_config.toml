@@ -1,15 +1,22 @@
-[Lacros]
+[Lacros_Lim]
     location = "Limassol"
     shortname = "Lim"
-[Lacros.settings]
+[Lacros_Lim.settings]
     decoupling = -30
-    smooth = true
     grid_time = 6
     max_no_nodes = 15
-    thres_factor_co = 6.0
-    thres_factor_cx = 3.0
     LDR = true
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 98 # = 6.56 m/s
     station_altitude = 12
+    #add_to_fname = '_rectwin'
+[Lacros_Lim.settings.peak_finding_params]
+    #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
+    #vel_smooth = [0.33,0.33,0.33]
+    thres_factor_co = 6.0 # supress spurious peaks introduced by tails
+    thres_factor_cx = 3.0
+    span = 0.1
+    smooth_polyorder = 1
 
 
 [Lacros_at_ACCEPT]
@@ -17,13 +24,17 @@
     shortname = "Cab"
 [Lacros_at_ACCEPT.settings]
     decoupling = -30
-    smooth = true
-    grid_time = 4
+    #grid_time = 4
+    #grid_time = 6
+    grid_time = 10
     max_no_nodes = 15
-    thres_factor_co = 1.3
-    thres_factor_cx = 1.3
     LDR = true
-    station_altitude = 12
+    station_altitude = -1
+[Lacros_at_ACCEPT.settings.peak_finding_params]
+    thres_factor_co = 3.0 # supress spurious peaks introduced by tails
+    thres_factor_cx = 3.0
+    span = 0.1
+    smooth_polyorder = 1
 
 [Lacros_Pun]
     location = "Punta Arenas"
@@ -110,6 +121,20 @@
     LDR = false 
     station_altitude = 22
 [kazr_mosaic.settings.peak_finding_params]
+    #vel_smooth = true
+    vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
+    thres_factor_co = 3.0 
+    thres_factor_cx = 3.0
+
+[kazr_md_mosaic] 
+    location = "MOSAiC" 
+    shortname = "kazrmdmosaic" 
+[kazr_md_mosaic.settings] 
+    grid_time = 6 
+    max_no_nodes = 15 
+    LDR = false 
+    station_altitude = 22
+[kazr_md_mosaic.settings.peak_finding_params]
     #vel_smooth = true
     vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
     thres_factor_co = 3.0 
