@@ -368,6 +368,10 @@ class peakTreeBuffer():
             self.doppler_spectrum = self.f.variables['doppler_spectrum'][:]
             self.doppler_spectrum_h = self.f.variables['doppler_spectrum_h'][:]
             self.covariance_spectrum_re = self.f.variables['covariance_spectrum_re'][:]
+            self.covariance_spectrum_im = self.f.variables['covariance_spectrum_im'][:]
+
+            self.v_noise_power = self.f.variables['VNoisePow'][:]
+            self.h_noise_power = self.f.variables['HNoisePow'][:]
 
 
     def load_joyrad_file(self, filename, load_to_ram=False):
@@ -1105,8 +1109,14 @@ class peakTreeBuffer():
             ir_slicer = slice(max(ir-h_avg, 0), ir+h_avg)
             spec_chunk = self.doppler_spectrum[it_slicer,ir_slicer,:]
             cov_re = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
-
+            cov_im = self.covariance_spectrum_im[it_slicer,ir_slicer,:]
             spec_chunk_h = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
+
+            # calculate the ldr at the raw resolution?
+
+            rhv = np.abs(np.complex(cov_re, cov_im)/np.sqrt(()*(spec_chunk_h + spec_noise_h)))
+
+            
             specLDR_chunk = (spec_chunk - (2*cov_re))/(spec_chunk + (2*cov_re))
             # specZcx_chunk = spec_chunk*specLDR_chunk
 
