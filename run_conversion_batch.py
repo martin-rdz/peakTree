@@ -49,12 +49,7 @@ if args.config == 'Lacros_Pun':
 
 for f in sorted(files)[:]:
     print('now doing ', f)
-    if "mosaic" in args.config:
-        pTB.load_newkazr_file(path+f, load_to_ram=True)
-    elif args.config == 'kazr_baecc':
-        pTB.load_kazr_file(path+f, load_to_ram=True)
-    else:
-        pTB.load_spec_file(path+f, load_to_ram=True)
+    pTB.load(path+f, load_to_ram=True)
     pTB.assemble_time_height(outpath)
 
 

@@ -201,11 +201,25 @@ class peakTreeBuffer():
         else:
             raise ValueError('no system defined')
         self.spectra_in_ram = False
+        self.loader = config[system]['loader']
 
         self.peak_finding_params = config[system]['settings']['peak_finding_params']
         
         self.git_hash = get_git_hash()
 
+
+
+    def load(self, filename, load_to_ram=False):
+        """convenience fuction for  loader call
+        reads the self.loader (as specified in the instrument_config)
+        """
+
+        if self.loader == 'kazr_new':
+            self.load_newkazr_file(filename, load_to_ram=load_to_ram)
+        elif self.loader == 'kazr_legacy':
+            self.load_kazr_file(filename, load_to_ram=load_to_ram)
+        else:
+            self.load_spec_file(filename, load_to_ram=load_to_ram)
 
     def load_spec_file(self, filename, load_to_ram=False):
         """load spectra from raw file

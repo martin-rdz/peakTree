@@ -100,6 +100,7 @@
 [kazr_baecc] 
     location = "Hyytiala" 
     shortname = "kazrbaecc" 
+    loader = 'kazr_legacy'
 [kazr_baecc.settings] 
     grid_time = 6 
     max_no_nodes = 15 
@@ -115,6 +116,7 @@
 [kazr_mosaic] 
     location = "MOSAiC" 
     shortname = "kazrmosaic" 
+    loader = 'kazr_new'
 [kazr_mosaic.settings] 
     grid_time = 6 
     max_no_nodes = 15 
@@ -126,9 +128,26 @@
     thres_factor_co = 3.0 
     thres_factor_cx = 3.0
 
+[mwacr_mosaic] 
+    location = "MOSAiC" 
+    shortname = "mwacrmosaic" 
+    loader = 'kazr_new'
+[mwacr_mosaic.settings] 
+    grid_time = 5 
+    max_no_nodes = 15 
+    LDR = false 
+    station_altitude = 22
+[mwacr_mosaic.settings.peak_finding_params]
+    #vel_smooth = true
+    vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
+    thres_factor_co = 3.0 
+    thres_factor_cx = 3.0
+    prom_thres = 0.5 # = 1.0 if omitted
+
 [kazr_md_mosaic] 
     location = "MOSAiC" 
     shortname = "kazrmdmosaic" 
+    loader = 'kazr_new'
 [kazr_md_mosaic.settings] 
     grid_time = 6 
     max_no_nodes = 15 
