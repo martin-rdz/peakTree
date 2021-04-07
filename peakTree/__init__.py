@@ -151,6 +151,7 @@ def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
     Returns:
         list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
     """
+    print(ts_range[0], ts_range[1])
     grid = np.arange(ts_range[0], ts_range[1]+1, time_interval)
     grid_mid = grid[:-1] + np.diff(grid)/2
 

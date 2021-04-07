@@ -3,6 +3,7 @@
 
 import datetime
 import os
+import re
 #import matplotlib
 #matplotlib.use('Agg')
 #import numpy as np
@@ -33,6 +34,7 @@ path = 'data/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
 files = os.listdir(path)
 files = [f for f in files if ('.nc' in f or '.cdf' in f)]
 print(files)
+#files = [f for f in files if int(re.findall("T(\d*)", f)[0]) > 1300]
 
 outpath = 'output/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
 if not os.path.isdir(outpath):
