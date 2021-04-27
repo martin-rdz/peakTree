@@ -12,6 +12,7 @@ import datetime
 import logging
 import ast
 import subprocess
+import re
 import netCDF4
 import numpy as np
 import matplotlib.pyplot as plt
@@ -284,9 +285,15 @@ class peakTreeBuffer():
         self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0 
         self.range = self.f.variables['range'][:] 
         #self.velocity = self.f.variables['velocity'][:] 
-        self.velocity = self.f.variables['velocity_bins'][:] 
+        self.velocity = self.f.variables['velocity_bins'][:].astype(np.float64) 
+        if isinstance(self.velocity, np.ma.MaskedArray):
+            self.velocity = self.velocity.data
+        assert not isinstance(self.velocity, np.ma.MaskedArray), \
+            "velocity array shall not be np.ma.MaskedArray"
 
-        self.cal_constant = float(self.f.cal_constant[:-3])
+        # :cal_constant = "-24.308830 (dB)" ;
+        # :cal_constant = "-12.8997 dB"
+        self.cal_constant = float(re.findall("[+-]\d+.\d+", self.f.cal_constant)[0])
         self.cal_constant_lin = h.z2lin(self.cal_constant)
  
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
@@ -672,6 +679,11 @@ class peakTreeBuffer():
                         #empty spectrum
                         specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
 
+                #if isinstance(specZ, np.ma.MaskedArray):
+                #    specZ = specZ.data
+                #assert not (isinstance(specZ, np.ma.MaskedArray)\
+                #        or isinstance(specZ, np.ma.core.MaskedArray)), \
+                #    "specZ array shall not be np.ma.MaskedArray"
                 no_averages = specZ.shape[0] 
                 specZ = np.average(specZ, axis=0)
                 specZ = specZ * self.cal_constant_lin * self.range[ir]**2
@@ -1043,7 +1055,6 @@ class peakTreeBuffer():
  
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 
- 
  
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
