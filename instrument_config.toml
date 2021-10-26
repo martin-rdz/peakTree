@@ -1,6 +1,7 @@
 [Lacros_Lim]
     location = "Limassol"
     shortname = "Lim"
+    loader = "mira"
 [Lacros_Lim.settings]
     decoupling = -30
     grid_time = 6
@@ -39,6 +40,7 @@
 [Lacros_Pun]
     location = "Punta Arenas"
     shortname = "Pun"
+    loader = "mira"
 [Lacros_Pun.settings]
     decoupling = -30
     grid_time = 6
