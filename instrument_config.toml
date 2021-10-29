@@ -177,21 +177,21 @@
 
 
 [limrad_peako] 
-    location = "Punta Arenas"
-    shortname = "Pun"
+    location = "Leipzig"
+    shortname = "Lei"
     loader = 'rpgpy'
 [limrad_peako.settings] 
     grid_time = false
     max_no_nodes = 15 
     LDR = true 
-    decoupling = -35
+    decoupling = -30
     station_altitude = 22
 [limrad_peako.settings.peak_finding_params]
     # as an interval index-t_avg:index+t_avg
     t_avg = 0
-    h_avg = 1
-    # what units?
-    span = 0.5
+    h_avg = 0
+    # span in m s^-1
+    span = 0.3
     smooth_polyorder = 1
-    prom_thres = 1
-    width_thres = 3
+    prom_thres = 0.5
+    width_thres = 2

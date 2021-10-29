@@ -27,6 +27,7 @@ pTB = peakTree.peakTreeBuffer(system='limrad_peako')
 
 #pTB.load_limrad_spec('data/20181216-1210-1215_LIMRAD94_spectra.nc', load_to_ram=True)
 #pTB.load_limrad_spec('data/20181216-1510-1515_LIMRAD94_spectra.nc', load_to_ram=True)
-pTB.load_limrad_spec('data/20190223-1440-1500_LIMRAD94_spectra.nc', load_to_ram=True)
+#pTB.load_limrad_spec('data/20190223-1440-1500_LIMRAD94_spectra.nc', load_to_ram=True)
+pTB.load('data/210319_140002_P05_ZEN.LV0_rpgpy.NC', load_to_ram=True)
 
-pTB.assemble_time_height('output/')
+pTB.assemble_time_height('output/', fname_system=True)

@@ -375,24 +375,20 @@ class peakTreeBuffer():
 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
-        def masked_to_plain(array):
-            if isinstance(array, np.ma.MaskedArray):
-                return array.data, array.mask
-            else:
-                return array, np.zeros_like(array).astype(bool)
-
         if load_to_ram == True:
             self.spectra_in_ram = True
-            self.doppler_spectrum, spec_mask = masked_to_plain(self.f.variables['doppler_spectrum'][:])
-            self.doppler_spectrum_h, spec_h_mask = masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
-            self.covariance_spectrum_re, cov_re_mask = masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
-            self.covariance_spectrum_im, cov_im_mask = masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
+            self.doppler_spectrum, spec_mask = h.masked_to_plain(self.f.variables['doppler_spectrum'][:])
+            self.doppler_spectrum_h, spec_h_mask = h.masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
+            self.covariance_spectrum_re, cov_re_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
+            self.covariance_spectrum_im, cov_im_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
             self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
 
-            self.integrated_noise, _ = masked_to_plain(self.f.variables['integrated_noise'][:])
-            self.integrated_noise_h, _ = masked_to_plain(self.f.variables['integrated_noise_h'][:])
+            self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
+            self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            self.doppler_spectrum_v = self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+            print("WARNING: the scaling factor is hard-coded, rpg software version > 5.40")
+            scaling = 4
+            self.doppler_spectrum_v = scaling*self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
             bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
@@ -400,15 +396,15 @@ class peakTreeBuffer():
 
             print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
             noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-            noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+            self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
             noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
-            noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+            self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
 
             #rhv = np.abs(np.complex(cov_re, cov_im)/np.sqrt(()*(spec_chunk_h + spec_noise_h)))
             #print('shapes ', self.covariance_spectrum_re.shape, self.covariance_spectrum_im.shape, self.doppler_spectrum_v.shape, noise_v_per_bin.shape, 
             #    self.doppler_spectrum_h.shape, noise_h_per_bin.shape)
             self.rhv = np.abs(self.covariance_spectrum_re + 1j * self.covariance_spectrum_im) / np.sqrt( 
-                (self.doppler_spectrum_v + noise_v_per_bin) * (self.doppler_spectrum_h + noise_h_per_bin) )
+                (self.doppler_spectrum_v + self.noise_v_per_bin) * (self.doppler_spectrum_h + self.noise_h_per_bin) )
 
 
     def load_joyrad_file(self, filename, load_to_ram=False):
@@ -457,7 +453,7 @@ class peakTreeBuffer():
         Args:
             sel_ts (tuple or float): either value or (index, value)
             sel_range (tuple or float): either value or (index, value)
-            temporal_average (optional): aberage over the interval 
+            temporal_average (optional): average over the interval 
                 (tuple of bin in time dimension or number of seconds)
             roll_velocity (optional): shift the x rightmost bins to the
                 left 
@@ -944,26 +940,13 @@ class peakTreeBuffer():
                 'specSNRco_mask': specSNRco_mask
             }
 
-            def divide_bounds(bounds):
-                """
-                divide_bounds([[10,20],[20,25],[25,30],[40,50]]) 
-                => noise_sep [[10, 30], [40, 50]], internal [20, 25]
-                """
-                bounds = list(sorted(h.flatten(bounds)))
-                occ = dict((k, (bounds).count(k)) for k in set(bounds))
-                internal = [k for k in occ if occ[k] == 2]
-                noise_sep = [b for b in bounds if b not in internal]
-                noise_sep = [[noise_sep[i], noise_sep[i+1]] for i in \
-                             range(0, len(noise_sep)-1,2)]
-                return noise_sep, internal
-
             left_edges = self.f.variables['left_edge'][:,ir,it].astype(np.int).compressed().tolist()
             right_edges = self.f.variables['right_edge'][:,ir,it].astype(np.int).compressed().tolist()
             bounds = list(zip(left_edges, right_edges))
 
             if not all([e[0]<e[1] for e in bounds]):
                 bounds = []
-            d_bounds = divide_bounds(bounds)
+            d_bounds = h.divide_bounds(bounds)
             print("{} => {} {}".format(bounds, *d_bounds))
             travtree = generate_tree.tree_from_peako({**spectrum}, *d_bounds)
             return travtree, spectrum
@@ -1149,33 +1132,57 @@ class peakTreeBuffer():
                 it_slicer = slice(max(it-t_avg, 0), it+t_avg)
             else:
                 it_slicer = slice(it, it+1)
-            ir_slicer = slice(max(ir-h_avg, 0), ir+h_avg)
+            if h_avg != 0:
+                ir_slicer = slice(max(ir-h_avg, 0), ir+h_avg)
+            else:
+                ir_slicer = slice(ir, ir+1)
             spec_chunk = self.doppler_spectrum[it_slicer,ir_slicer,:]
+
+            # some parallel processing for debugging
             spec_v_chunk = self.doppler_spectrum_v[it_slicer,ir_slicer,:]
+            #spec_h_chunk = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
+            #cov_re_chunk = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
+            #cov_im_chunk = self.covariance_spectrum_im[it_slicer,ir_slicer,:]
             rhv_chunk = self.rhv[it_slicer,ir_slicer,:] 
+            noise_h_bin = self.noise_h_per_bin[it_slicer,ir_slicer,:] 
+            noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer,:] 
 
             mask_chunk = self.spectral_mask[it_slicer,ir_slicer,:]
-            #spec_chunk[mask_chunk] = np.nan
-            #rhv_chunk[mask_chunk] = np.nan
+            spec_chunk[mask_chunk] = np.nan
+            rhv_chunk[mask_chunk] = np.nan
             #specLDR_chunk = (spec_chunk - (2*cov_re))/(spec_chunk + (2*cov_re))
             #
             # actually we are calculating SLDR
             #specLDR_chunk = 10*np.log10((1-rhv_chunk)/(1+rhv_chunk))
             specLDR_chunk = (1-rhv_chunk)/(1+rhv_chunk)
             # specZcx_chunk = spec_chunk*specLDR_chunk
-            print(10*np.log10(specLDR_chunk))
+            no_averages = spec_chunk.shape[1]
 
-            print('slicer', it_slicer, ir_slicer, spec_chunk.shape)
+            print('slicer', it_slicer, ir_slicer, 'shape', spec_chunk.shape)
             specZ = np.average(spec_chunk, axis=(0,1))
-            specZcx = np.average(spec_v_chunk, axis=(0,1))
+            specZv = np.average(spec_v_chunk, axis=(0,1))
+            #specZh = np.average(spec_h_chunk, axis=(0,1))
+            #cov_re = np.average(cov_re_chunk, axis=(0,1))
+            #cov_im = np.average(cov_im_chunk, axis=(0,1))
+            #rhv = np.average(rhv_chunk, axis=(0,1))
+            noise_h = np.average(noise_h_bin, axis=(0,1))
+            noise_v = np.average(noise_v_bin, axis=(0,1))
+
             specLDR = np.average(specLDR_chunk, axis=(0,1))
             print('spec shapes', specZ.shape, specLDR.shape)
-            print('spec_ldr', 10*np.log10(specLDR))
+            #print('spec_ldr', 10*np.log10(specLDR))
 
-            #specLDR = specZcx/specZ
+            if np.all(np.isnan(specZ)):
+                print('empty spectrum', ir, it)
+                return {}, {}
 
-            ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0]
-            print('we are at chirp ', ind_chirp)
+            noise_mean = noise_h
+            #noise_thres = np.min(specZ[np.isfinite(specZ)])*3
+            noise_thres = noise_h[0]*3
+
+            #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
+            ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
+            print('current chirp [zero-based index]', ind_chirp)
 
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
                 raise ValueError('not implemented for limrad_peako as dealiasing is done by preprocesisng')
@@ -1187,74 +1194,65 @@ class peakTreeBuffer():
             vel_chirp = self.velocity[:,ind_chirp]
             vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
-            print('window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
-            #specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
-
-            #specZ = h.z2lin(self.f.variables['spectra'][:,ir,it])
-            #specZ = specZ*h.z2lin(self.settings['cal_const'])*self.range[ir]**2
+            print('span ', peak_finding_params['span'], ' window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
+            specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
 
             specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ))
-            noise = h.estimate_noise(specZ)
-            # some debuggung for the noise estimate
+            specZ[specZ_mask] = 0
 
-            # for some reason the noise estimate is too high
-            #print('raw spec', self.f.variables['spectra'][:20,ir,it])
-            #noise_raw_dB = h.estimate_noise(self.f.variables['spectra'][:,ir,it])
-            #print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
-            #    noise_raw_dB['noise_sep'], noise_raw_dB['noise_mean']))
-            #noise_raw_lin = h.estimate_noise(h.z2lin(self.f.variables['spectra'][:,ir,it]))
-            #print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
-            #    h.lin2z(noise_raw_lin['noise_sep']), h.lin2z(noise_raw_lin['noise_mean'])))
-
-            #print('peako noise level ', self.f.variables['noiselevel'][ir,it])
-            #print('calibrated ', h.lin2z(h.z2lin(self.f.variables['noiselevel'][ir,it])*h.z2lin(self.settings['cal_const'])*self.range[ir]**2))
-            #noise_thres = noise['noise_sep']
-            # noise_thres = noise['noise_mean']*3
-            noise_mean = noise['noise_mean']
-            noise_thres = np.min(specZ)
-
-            specSNRco = specZ/noise_mean
+            # also SNRh
+            specSNRco = specZ/noise_h
             specSNRco_mask = specZ_mask.copy()
-            print("nose_thres {:5.3f} noise_mean {:5.3f}".format(
-                h.lin2z(noise['noise_sep']), h.lin2z(noise['noise_mean'])))
+            print("noise_h {:5.3f}  noise_v {:5.3f}".format(
+                h.lin2z(noise_h[0]), h.lin2z(noise_v[0])))
+            
 
-            #specZcx = specZ*specLDR
+            # for the SLDR radar this is a rather hypothetical quantity
+            specZcx = specZ*specLDR
             specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
-            #specLDR = specZcx/specZ
-            specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-
-            thres_Zcx = np.nanmin(specZcx)
-            Zcx_mask = np.logical_or(specZcx < thres_Zcx, ~np.isfinite(specZcx))
-            specZcx_validcx = specZcx.copy()
-            #specZcx_validcx[Zcx_mask] = 0.0
-            specZ_validcx = specZ.copy()
-            #specZ_validcx[Zcx_mask] = 0.0
+            #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+            specSNRv = specZv/noise_v
+            #print('SNRcx', h.lin2z(specSNRcx))
+            #print('SNRco', h.lin2z(specSNRco))
+            #print('SNRv', specSNRv)
+            #print('SNRco', specSNRco)
+            specLDR_mask = ((specSNRv < 300) | (specSNRco < 300 | specZ_mask))
 
             specLDRmasked = specLDR.copy()
-            #specLDRmasked[Zcx_mask] = np.nan
+            specLDRmasked[specLDR_mask] = np.nan
+            # required for subpeak LDR calculation
+            specZcx_validcx = specZcx.copy()
+            specZcx_validcx[specLDR_mask] = 0
+            specZ_validcx = specZ.copy()
+            specZ_validcx[specLDR_mask] = 0
 
 
+            assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
             spectrum = {
                 'ts': self.timestamps[it], 'range': self.range[ir], 
                 'vel': self.velocity[:,ind_chirp],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
                 'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
-                'specLDR': specLDR, 'specLDR_mask': specLDR_mask,
                 'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
+                'specLDR': specLDR, 'specLDR_mask': specLDR_mask,
                 'specLDRmasked': specLDRmasked,
-                'no_temp_avg': 0,
+                'no_temp_avg': no_averages,
                 'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
+                #'noise_h': noise_h, 'noise_v': noise_v,
                 'decoupling': self.settings['decoupling'],
             }
 
-            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
+            #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
+            #travtree = {}
 
             return travtree, spectrum
 
 
     #@profile
-    def assemble_time_height(self, outdir):
+    def assemble_time_height(self, outdir, fname_system=False):
         """convert a whole spectra file to the peakTree node file
         
         Args:
@@ -1337,8 +1335,13 @@ class peakTreeBuffer():
             log.info(f'add to fname {add_to_fname}')
         else:
             add_to_fname = ''
-        filename = outdir + '{}_{}_peakTree{}.nc4'.format(self.begin_dt.strftime('%Y%m%d_%H%M'),
-                                                          self.shortname, add_to_fname)
+        if fname_system:
+            sys = f"{self.type}_"
+        else:
+            sys = ""
+        filename = outdir + '{}_{}_{}peakTree{}.nc4'.format(
+            self.begin_dt.strftime('%Y%m%d_%H%M'),
+            self.shortname, sys, add_to_fname)
         log.info('output filename {}'.format(filename))
         
         with netCDF4.Dataset(filename, 'w', format='NETCDF4') as dataset:
@@ -1349,8 +1352,8 @@ class peakTreeBuffer():
             dataset.createDimension('mode', 1)
 
             print(self.velocity.shape)
-            if self.type == 'limrad_peako':
-                dim_chirp = dataset.createDimension('chirp', self.rg_offset_chirp.shape[0])
+            if self.type == 'rpgpy':
+                dim_chirp = dataset.createDimension('chirp', self.chirp_start_indices.shape[0])
 
             times = dataset.createVariable('timestamp', np.int32, ('time',))
             times[:] = timestamps_grid.astype(np.int32)
@@ -1373,7 +1376,7 @@ class peakTreeBuffer():
             hg[:] = height
             hg.long_name = 'Height above mean sea level [m]'
 
-            if self.type == 'limrad_peako':
+            if self.type == 'rpgpy':
                 vel = dataset.createVariable('velocity', np.float32, ('vel','chirp'))
                 vel[:,:] = self.velocity.astype(np.float32)
             else:

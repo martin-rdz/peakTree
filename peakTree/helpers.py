@@ -36,6 +36,27 @@ def ts_to_dt(ts):
     return datetime.datetime.utcfromtimestamp(ts)
 
 
+def masked_to_plain(array):
+    """unpack the masked array into plain versions"""
+    if isinstance(array, np.ma.MaskedArray):
+        return array.data, array.mask
+    else:
+        return array, np.zeros_like(array).astype(bool)
+
+
+def divide_bounds(bounds):
+    """
+    divide_bounds([[10,20],[20,25],[25,30],[40,50]]) 
+    => noise_sep [[10, 30], [40, 50]], internal [20, 25]
+    """
+    bounds = list(sorted(flatten(bounds)))
+    occ = dict((k, (bounds).count(k)) for k in set(bounds))
+    internal = [k for k in occ if occ[k] == 2]
+    noise_sep = [b for b in bounds if b not in internal]
+    noise_sep = [[noise_sep[i], noise_sep[i+1]] for i in \
+                    range(0, len(noise_sep)-1,2)]
+    return noise_sep, internal
+
 @jit(nopython=True, fastmath=True)
 def lin2z(array):
     """calculate dB values from a array of linear"""
