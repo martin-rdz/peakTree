@@ -25,7 +25,7 @@ args = parser.parse_args()
 pTB = peakTree.peakTreeBuffer(system=args.system)
 pTB.load_peakTree_file(args.file)
 
-if args.plotsubfolder is '':
+if args.plotsubfolder == '':
     savepath = 'plots/'
 else:
     savepath = 'plots/{}/'.format(args.plotsubfolder)
@@ -64,8 +64,12 @@ print(plot_time_interval)
 #cat_cmap = plt.cm.get_cmap('terrain_r', 6)
 cat_cmap = matplotlib.colors.ListedColormap(
     ["#ffffff", "#cdbfbc", "#987b61", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
+cat_cmap = matplotlib.colors.ListedColormap(
+    ["#ffffff", "#cdbfbc", "orangered", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
 # We must be sure to specify the ticks matching our target names
 labels = {0: '0', 1: "1", 2: "3", 3: "5", 4: "7", 5: "9"}
+# number of peaks instead number of nodes
+labels = {0: '0', 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 cbarformatter = plt.FuncFormatter(lambda val, loc: labels[val])
 no_nodes_plot = np.ceil(np.array(no_nodes)/2.)
 
@@ -83,7 +87,8 @@ ax.set_xlim(plot_time_interval)
 ax.set_ylim(plot_height_interval)
 ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
 ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
-cbar.ax.set_ylabel("Number of nodes", fontweight='semibold', fontsize=15)
+#cbar.ax.set_ylabel("Number of nodes", fontweight='semibold', fontsize=15)
+cbar.ax.set_ylabel("Number of peaks", fontweight='semibold', fontsize=15)
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
 # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))

@@ -126,6 +126,7 @@ def plot_spectrum(travtree, spectrum, savepath):
     ax.plot([e[0] for e in flatten], h.lin2z(np.array([e[1] for e in flatten])), 'o', color='r', markersize=5)
 
     #ax.hlines(h.lin2z(valid_LDR), -10, 10, color='grey')
+    ax.hlines(h.lin2z(spectrum['noise_thres']), -10, 10, ls='--', lw=1.3, color='grey')
     if 'specLDR' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specLDR']), 
                 linewidth=1.5, color='turquoise', where='mid', label='specLDR')
