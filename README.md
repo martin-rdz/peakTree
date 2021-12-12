@@ -56,7 +56,23 @@ Please update your meta information in the `output_meta.toml` file.
 
 ### Usage
 
-convert a spectra file to peakTree netcdf output
+#### 1. Define the peakfinding paramters 
+
+**WIP:** The peakfinding parameters are now compatible with the output of peako [[Kalesse et al. 2019 AMT]](https://doi.org/10.5194/amt-12-4591-2019).
+They have to be configured in the `instrument_config.toml` together with some instrument specific meta data.
+The parameters are chirp aware.
+
+```
+[limrad_punta.settings.peak_finding_params.chirp2]
+    t_avg = 15           # s
+    h_avg = 0            # m
+    span = 0.2           # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+```
+
+#### 2. Convert a spectra file to peakTree netcdf output
 ```python
 #! /usr/bin/env python3
 # coding=utf-8
@@ -71,10 +87,14 @@ pTB.load_spec_file('data/D20170629_T0830_0945_Pol_zspc2nc_v1_02_standard.nc4')
 pTB.assemble_time_height('output/')
 ```
 
-plot a peakTree netcdf file
+#### 3. Plot a peakTree netcdf file
+A default plotting script is also included.
 ```
 python3 plot2d.py output/20170629_0830_Pol_peakTree.nc4 --range-interval 400,5000 --no-nodes 2
+# or with more options
 python3 plot2d.py output/20181216_1510_Pun_peakTree.nc4  --no-nodes 2 --plotsubfolder peaktree_limrad --system limrad_peako --range-interval min,3000
+#
+python3 plot2d.py output/20190911_0300_Pun_rpgpy_peakTree.nc4 --range-interval 100,7000 --no-nodes 6 --system limrad_punta --plotsubfolder peaktree_limrad_punta
 ```
 
 convert a peakTree netcdf file to dictionary format
