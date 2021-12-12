@@ -16,7 +16,8 @@ log = logging.getLogger('peakTree')
 log.setLevel(logging.DEBUG)
 log.addHandler(logging.StreamHandler())
 
-pTB = peakTree.peakTreeBuffer(system='limrad_peako')
+#pTB = peakTree.peakTreeBuffer(system='limrad_peako')
+pTB = peakTree.peakTreeBuffer(system='limrad_punta')
 
 # IDEA: for now run with temporal_average = False
 # t_avg: number of neighbors in time dimension (both sides)
@@ -28,6 +29,7 @@ pTB = peakTree.peakTreeBuffer(system='limrad_peako')
 #pTB.load_limrad_spec('data/20181216-1210-1215_LIMRAD94_spectra.nc', load_to_ram=True)
 #pTB.load_limrad_spec('data/20181216-1510-1515_LIMRAD94_spectra.nc', load_to_ram=True)
 #pTB.load_limrad_spec('data/20190223-1440-1500_LIMRAD94_spectra.nc', load_to_ram=True)
-pTB.load('data/210319_140002_P05_ZEN.LV0_rpgpy.NC', load_to_ram=True)
+#pTB.load('data/210319_140002_P05_ZEN.LV0_rpgpy.NC', load_to_ram=True)
+pTB.load('data/190911_030001_P05_ZEN.LV0.NC', load_to_ram=True)
 
 pTB.assemble_time_height('output/', fname_system=True)

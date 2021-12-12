@@ -13,11 +13,12 @@ import peakTree.helpers as h
 
 import logging
 log = logging.getLogger('peakTree')
-log.setLevel(logging.INFO)
+#log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 log.addHandler(logging.StreamHandler())
 
-pTB = peakTree.peakTreeBuffer()
-pTB = peakTree.peakTreeBuffer(system='Lacros')
+#pTB = peakTree.peakTreeBuffer()
+#pTB = peakTree.peakTreeBuffer(system='Lacros')
 #pTB.load_spec_file('data/D20170311_T2000_2100_Lim_zspc2nc_v1_02_standard.nc4')
 # pTB.load_spec_file('data/D20170311_T2000_2100_Lim_zspc2nc_v1_02_standard_faster.nc4')
 # pTB.load_spec_file('data/D20180122_T1030_1100_Lim_zspc2nc_v1_02_standard.nc4')
@@ -43,8 +44,10 @@ pTB = peakTree.peakTreeBuffer(system='Lacros')
 #pTB.load_spec_file('data/D20170629_T0830_0945_Pol_zspc2nc_v1_02_standard.nc4')
 #pTB.assemble_time_height('output/')
 
-pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system='Lacros_Pun')
-pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
+#pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system='Lacros_Pun')
+pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
+#pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
+pTB.load_spec_file('data/D20190911_T0300_0400_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
 pTB.assemble_time_height('output/')
 exit()
 

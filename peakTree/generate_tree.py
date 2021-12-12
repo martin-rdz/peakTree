@@ -273,7 +273,7 @@ def moment(x, Z):
     """
     # probably arr.sum() is faster than np.sum(arr)
     sumZ = Z.sum() # memory over processing time
-    print(Z, sumZ)
+    #print(Z, sumZ)
     mean = (x*Z).sum()/sumZ
     x_mean = x-mean # memory over processing time
     rms = np.sqrt((((x_mean)**2)*Z).sum()/sumZ)
@@ -294,7 +294,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
         moment, spectrum
     """
     Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
-    # TODO add the masked pocessing for the moments
+    # TODO add the masked processing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:
         masked_Z = h.fill_with(spectrum['specZ'][bounds[0]:bounds[1]+1], 
@@ -607,6 +607,29 @@ def bounds_from_find_peak(peaks, prop):
 
     return bounds
 
+def fix_peaks_unique(peaks, prop):
+    """equally high peaks are not prominence filtered by find_peaks
+    (actually specified behavior)
+    
+    i.e. scipy.signal.find_peaks(np.array([0,0,1,4,5,1,5,3,0]), prominence=1)
+    >> (array([4, 6]),
+        {'prominences': array([5., 5.]),
+         'left_bases': array([1, 1]),
+         'right_bases': array([8, 8])})
+    
+    """
+
+    log.warning("temporary fix for the prominence of equally high peaks")
+    d = {}
+    for e in zip(prop['left_bases'], prop['right_bases'], peaks):
+        d[e[:2]] = e[2]
+
+    peaks = d.values()
+    lr_bounds = d.keys()
+    prop['left_bases'] = np.array([e[0] for e in lr_bounds])
+    prop['right_bases'] = np.array([e[1] for e in lr_bounds])
+
+    return peaks, prop
 
 
 def tree_from_spectrum_peako(spectrum, peak_finding_params):
@@ -622,16 +645,22 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
     #print('noise ', spectrum['noise_thres'], h.lin2z(spectrum['noise_thres']))
     # scipy.signal.find_peaks cannot deal with nans, i.e. lin2z([... 0 ... ]) causes problems
     masked_Z_pf = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask'] & (spectrum['specZ'] < spectrum['noise_thres'])), spectrum['noise_thres']/4.)
-    #print('masked_Z_p', h.lin2z(masked_Z_pf))
+    #print('masked_Z_p', h.lin2z(masked_Z_pf).tolist())
     masked_Z = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask']), 0)
+
+    width = peak_finding_params['width_thres']/peak_finding_params['vel_step']
     locs, props = scipy.signal.find_peaks(
         h.lin2z(masked_Z_pf), 
         height=h.lin2z(spectrum['noise_thres']),
         prominence=peak_finding_params['prom_thres'],
-        width=peak_finding_params['width_thres'],
+        width=width,
         rel_height=0.5)
     print('find_peaks locs, props', locs, props)
+    #noise_floor_edges = detect_peak_simple(masked_Z_pf, spectrum['noise_thres'])
+    #print('noise_floor_edges', noise_floor_edges)
 
+    if np.any(np.unique(h.lin2z(masked_Z_pf)[locs], return_counts=True)[1] > 1):
+        locs, props = fix_peaks_unique(locs, props)
     bounds = bounds_from_find_peak(locs, props)
     print('bounds ',bounds)
     #le, re = find_edges(h.lin2z(masked_Z_pf), h.lin2z(spectrum['noise_thres']), locs)

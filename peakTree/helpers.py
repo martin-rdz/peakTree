@@ -39,7 +39,9 @@ def ts_to_dt(ts):
 def masked_to_plain(array):
     """unpack the masked array into plain versions"""
     if isinstance(array, np.ma.MaskedArray):
-        return array.data, array.mask
+        mask = array.mask
+        mask = mask if mask.shape == array.data.shape else np.zeros_like(array).astype(bool)
+        return array.data, mask
     else:
         return array, np.zeros_like(array).astype(bool)
 

@@ -56,7 +56,8 @@ def check_part_not_reproduced(tree, spectrum):
     parents = [n.get('parent_id', -1) for n in tree.values()]
     leave_ids = list(set(tree.keys()) - set(parents))
     spec_from_mom = np.zeros(spectrum['specZ'].shape)
-    delta_v = spectrum['vel'][2] - spectrum['vel'][1]
+    vel, vel_mask = h.masked_to_plain(spectrum['vel'])
+    delta_v = vel[~vel_mask][2] - vel[~vel_mask][1]
     
     for i in leave_ids:
         if tree[i]['width'] < 0.001:
@@ -168,6 +169,20 @@ def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
     return [np.array(list(map(lambda e: e[i], out))) for i in range(6)]
 
 
+def get_averaging_boundaries(array, slice_length, zero_index=0):
+    """get the left and right indices each element in an array
+    for a given averaging slice_length
+    """
+
+    is_left = np.digitize(array-slice_length/2., array)
+    is_right = np.digitize(array+slice_length/2., array, right=True)
+
+    print(is_left[0], is_right[0])
+    print(array[is_left[0]], array[0], array[is_right[0]])
+
+    return zero_index + is_left, zero_index + is_right
+
+
 class peakTreeBuffer():
     """trees for a time-height chunk
 
@@ -209,6 +224,7 @@ class peakTreeBuffer():
         
         self.git_hash = get_git_hash()
 
+        self.preload_grid = False
 
 
     def load(self, filename, load_to_ram=False):
@@ -371,8 +387,12 @@ class peakTreeBuffer():
         
         self.chirp_start_indices = self.f.variables['chirp_start_indices'][:]
         self.n_samples_in_chirp = self.f.variables['n_samples_in_chirp'][:]
+        self.no_chirps = self.chirp_start_indices.shape[0]
         print('chirp_start_indices', self.chirp_start_indices)
+        bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
+        print('range bins per chirp', bins_per_chirp, bins_per_chirp.shape)
 
+        self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp) 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
         if load_to_ram == True:
@@ -386,13 +406,11 @@ class peakTreeBuffer():
             self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
             self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            print("WARNING: the scaling factor is hard-coded, rpg software version > 5.40")
-            scaling = 4
+            scaling = self.settings['tot_spec_scaling']
+            print("WARNING: the scaling factor is hard-coded, rpg software version > 5.40, configured are ", scaling)
             self.doppler_spectrum_v = scaling*self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
-            bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
-            print('range bins per chirp', bins_per_chirp, bins_per_chirp.shape)
 
             print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
             noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
@@ -443,8 +461,91 @@ class peakTreeBuffer():
         #     self.SNRco = self.f.variables['SNRco'][:]
 
 
+    def preload_averaging_grid(self):
+        """precalculate the averaging boundaries
+        
+        """
+        self.preload_grid = True
+
+        time_grid = {}        
+        if self.type == 'rpgpy':
+            for ind_chirp in range(self.no_chirps):
+                # t_avg = 0 gives wrong boundaries
+                t_avg = max(0.0001, self.peak_finding_params[f"chirp{ind_chirp}"]['t_avg'])
+                time_grid[ind_chirp] = get_averaging_boundaries(
+                    self.timestamps, t_avg)
+        else:
+            t_avg = max(0.0001, self.peak_finding_params['t_avg'])
+            time_grid[0] = get_averaging_boundaries(
+                self.timestamps, t_avg)
+
+    
+        if self.type == 'rpgpy':
+            left, right = [], []
+            for ind_chirp in range(self.no_chirps):
+                rg_avg = max(0.01, self.peak_finding_params[f"chirp{ind_chirp}"]['h_avg'])
+                # bounds of the current chirp
+                ir_min, ir_max = np.where(self.range_chirp_mapping == ind_chirp)[0][np.array([0, -1])]
+                il, ir = get_averaging_boundaries(
+                    self.range[ir_min:ir_max+1], rg_avg, zero_index=ir_min)
+                left.append(il)
+                right.append(ir)
+            range_grid = [np.concatenate(left), np.concatenate(right)]
+        else:
+            ind_chirp = 0
+            rg_avg = max(0.01, self.peak_finding_params['h_avg'])
+            range_grid = get_averaging_boundaries(
+                self.range, rg_avg)
+            #temp_avg = self.peak_finding_params['t_avg']
+
+        self.time_grid = time_grid
+        self.range_grid = range_grid
+
+
+    def get_it_interval(self, it, ir, sel_ts=None):
+        """"""
+        if self.type == 'rpgpy':
+            ind_chirp = self.range_chirp_mapping[ir]
+            temp_avg = self.peak_finding_params[f"chirp{ind_chirp}"]['t_avg']
+        else:
+            ind_chirp = 0
+            temp_avg = self.peak_finding_params['t_avg']
+
+        if self.preload_grid:
+            it_b = self.time_grid[ind_chirp][0][it]
+            it_e = self.time_grid[ind_chirp][1][it]
+        else:
+            if not sel_ts:
+                sel_ts = self.timestamps[it]
+            temp_avg = self.peak_finding_params['t_avg']
+            it_b = time_index(self.timestamps, sel_ts-temp_avg/2.)
+            it_e = time_index(self.timestamps, sel_ts+temp_avg/2.)+1
+
+        return it_b, it_e
+
+    def get_ir_interval(self, ir, sel_range=None):
+        """"""
+        if self.type == 'rpgpy':
+            ind_chirp = self.range_chirp_mapping[ir]
+            rg_avg = self.peak_finding_params[f"chirp{ind_chirp}"]['h_avg']
+        else:
+            ind_chirp = 0
+            rg_avg = self.peak_finding_params['h_avg']
+
+        if self.preload_grid:
+            ir_b = self.range_grid[0][ir]
+            ir_e = self.range_grid[1][ir]
+        else:
+            rg_avg = self.peak_finding_params['h_avg']
+            if not sel_range:
+                sel_range = self.range[ir]
+            ir_b = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - rg_avg/2. - t)))[0][0]
+            ir_e = np.where(self.range == min(self.range, key=lambda t: abs(sel_range + rg_avg/2. - t)))[0][0]+1
+
+        return ir_b, ir_e
+
     #@profile
-    def get_tree_at(self, sel_ts, sel_range, temporal_average=False, 
+    def get_tree_at(self, sel_ts, sel_range, temporal_average='fromparams', 
                     roll_velocity=False, peak_finding_params={}, silent=False):
         """get a single tree
         either from the spectrum directly (prior call of load_spec_file())
@@ -454,7 +555,7 @@ class peakTreeBuffer():
             sel_ts (tuple or float): either value or (index, value)
             sel_range (tuple or float): either value or (index, value)
             temporal_average (optional): average over the interval 
-                (tuple of bin in time dimension or number of seconds)
+                (tuple of bin in time dimension or 'fromparams' or False)
             roll_velocity (optional): shift the x rightmost bins to the
                 left 
             peak_finding_params (optional):
@@ -467,8 +568,6 @@ class peakTreeBuffer():
             dictionary with all nodes and the parameters of each node
         """
 
-        peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
-        # print('using peak_finding_params', peak_finding_params)
 
         if type(sel_ts) is tuple and type(sel_range) is tuple:
             it, sel_ts = sel_ts
@@ -476,96 +575,86 @@ class peakTreeBuffer():
         else:
             it = time_index(self.timestamps, sel_ts)
             ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0][0]
+        #it_b, it_e = it, min(it+1, self.timestamps.shape[0]-1)
         log.info('time {} {} {} height {} {}'.format(it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], ir, self.range[ir])) if not silent else None
         assert np.abs(sel_ts - self.timestamps[it]) < self.delta_ts, 'timestamps more than '+str(self.delta_ts)+'s apart'
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
 
-        if type(temporal_average) is tuple:
-            it_b, it_e = temporal_average
-        elif temporal_average:
-            it_b = time_index(self.timestamps, sel_ts-temporal_average/2.)
-            it_e = time_index(self.timestamps, sel_ts+temporal_average/2.)
-            assert self.timestamps[it_e] - self.timestamps[it_b] < 15, 'found averaging range too large'
-            log.debug('timerange {} {} {} {}'.format(it_b, h.ts_to_dt(self.timestamps[it_b]), it_e, h.ts_to_dt(self.timestamps[it_e]))) if not silent else None
+        #assert self.preload_grid
+        ir_min, ir_max = 0, self.range.shape[0]-1
+        if self.type == 'rpgpy':
+            ind_chirp = self.range_chirp_mapping[ir]
+            peak_finding_params = self.peak_finding_params[f"chirp{ind_chirp}"]
+            ir_min, ir_max = np.where(self.range_chirp_mapping == ind_chirp)[0][np.array([0, -1])]
+            #print('ir_min, ir_max', ir_min, ir_max)
+        peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
+        print('using peak_finding_params', peak_finding_params)
+        ir_b, ir_e = self.get_ir_interval(ir) 
+        ir_slicer = slice(max(ir_b, ir_min), min(ir_e, ir_max))
+
+        # decouple temporal average from grid 
+        # 
+        it_b, it_e = self.get_it_interval(it, ir) 
+        it_slicer = slice(it_b, min(it_e, self.timestamps.shape[0]-1))
+        it_slicer = slice(it_b, it_e)
+        # be extremely careful with slicer and _e or _e+1
+        slicer_sel_ts = self.timestamps[it_slicer]
+        log.debug('timerange {} {} {} '.format(str(it_slicer), h.ts_to_dt(slicer_sel_ts[0]), h.ts_to_dt(slicer_sel_ts[-1]))) if not silent else None
+        assert slicer_sel_ts[-1] - slicer_sel_ts[0] < 20, 'found averaging range too large'
+
+        print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer)
+        print(self.range[max(ir_b, ir_min)], self.range[ir], self.range[min(ir_e, ir_max)])
 
         if self.type == 'spec':
             decoupling = self.settings['decoupling']
 
             # why is ravel necessary here?
             # flatten seems to faster
-            if not temporal_average:
-                if self.spectra_in_ram:
-                    specZ = self.Z[:,ir,it].ravel()
-                    specLDR = self.LDR[:,ir,it].ravel()
-                    specSNRco = self.SNRco[:,ir,it].ravel()
-                else:
-                    specZ = self.f.variables['Z'][:,ir,it].ravel()
-                    specLDR = self.f.variables['LDR'][:,ir,it].ravel()
-                    specSNRco = self.f.variables['SNRco'][:,ir,it].ravel()
-                specZ_mask = specZ == 0.
-                #print('specZ.shape', specZ.shape, specZ)
-                empty_spec = np.all(specZ_mask)
-                
-                specLDR_mask = np.isnan(specLDR)
-                specZcx = specZ*specLDR
-                specZcx_mask = np.logical_or(specZ_mask, specLDR_mask)
-                
-                specSNRco_mask = specSNRco == 0.
-                no_averages = 1
+
+            if self.spectra_in_ram:
+                specZ_2d = self.Z[:,ir_slicer,it_slicer][:]
+                no_averages = np.prod(specZ_2d.shape[:-1])
+                specLDR_2d = self.LDR[:,ir_slicer,it_slicer][:]
+                specZcx_2d = specZ_2d*specLDR_2d
+                # np.average is slightly faster than .mean
+                #specZcx = specZcx_2d.mean(axis=1)
+                specZcx = np.average(specZcx_2d, axis=(1,2))
+                #specZ = specZ_2d.mean(axis=1)
+                specZ = np.average(specZ_2d, axis=(1,2))
             else:
-                if self.spectra_in_ram:
-                    #specZ = self.f.variables['Z'][:,ir,it_b:it_e+1]
-                    specZ_2d = self.Z[:,ir,it_b:it_e+1][:]
-                    no_averages = specZ_2d.shape[1]
-                    specLDR_2d = self.LDR[:,ir,it_b:it_e+1][:]
-                    specZcx_2d = specZ_2d*specLDR_2d
-                    # np.average is slightly faster than .mean
-                    #specZcx = specZcx_2d.mean(axis=1)
-                    specZcx = np.average(specZcx_2d, axis=1)
-                    #specZ = specZ_2d.mean(axis=1)
-                    specZ = np.average(specZ_2d, axis=1)
-                    specLDR = specZcx/specZ
-                    #specSNRco_2d = self.SNRco[:,ir,it_b:it_e+1][:]
-                    #specSNRco = specSNRco_2d.mean(axis=1)
-                    #specSNRco = np.average(specSNRco_2d, axis=1)
-                    # specZ, specZcx, specLDR, specSNRco, no_averages = fast_funcs.load_spec_mira(
-                    #     self.Z, self.LDR, self.SNRco, ir, it_b, it_e)
-                    assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
-                    assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
-                    assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
-                else:
-                    specZ = self.f.variables['Z'][:,ir,it_b:it_e+1][:]
-                    no_averages = specZ.shape[1]
-                    specLDR = self.f.variables['LDR'][:,ir,it_b:it_e+1][:]
-                    specZcx = specZ*specLDR
-                    specZcx = specZcx.mean(axis=1)
-                    specZ = specZ.mean(axis=1)
+                specZ = self.f.variables['Z'][:,ir_slicer,it_slicer][:]
+                no_averages = specZ.shape[1]
+                specLDR = self.f.variables['LDR'][:,ir_slicer,it_slicer][:]
+                specZcx = specZ*specLDR
+                specZcx = specZcx.mean(axis=(1,2))
+                specZ = specZ.mean(axis=(1,2))
 
-                    specLDR = specZcx/specZ
-                    #specSNRco = self.f.variables['SNRco'][:,ir,it_b:it_e+1][:]
-                    #specSNRco = specSNRco.mean(axis=1)
+            specLDR = specZcx/specZ
+            assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
+            assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
+            assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
+            #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
+            #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
 
-                #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
-                #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
+            # fill values can be both nan and 0
+            specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+            empty_spec = np.all(specZ_mask)
+            if empty_spec:
+                specZcx_mask = specZ_mask.copy()
+                specLDR_mask = specZ_mask.copy()
+            elif np.all(np.isnan(specZcx)):
+                specZcx_mask = np.ones_like(specZcx).astype(bool)
+                specLDR_mask = np.ones_like(specLDR).astype(bool)
+            else:
+                specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
+                specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+                # maybe omit one here?
+            assert np.all(specZcx_mask == specLDR_mask), f'masks not equal {specZcx} {specLDR}'
+            #specSNRco_mask = specSNRco == 0.
+            # print('specZ', specZ.shape, specZ)
+            # print('specLDR', specLDR.shape, specLDR)
+            # print('specSNRco', specSNRco.shape, specSNRco)
 
-                # fill values can be both nan and 0
-                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
-                empty_spec = np.all(specZ_mask)
-                if empty_spec:
-                    specZcx_mask = specZ_mask.copy()
-                    specLDR_mask = specZ_mask.copy()
-                elif np.all(np.isnan(specZcx)):
-                    specZcx_mask = np.ones_like(specZcx).astype(bool)
-                    specLDR_mask = np.ones_like(specLDR).astype(bool)
-                else:
-                    specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
-                    specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-                    # maybe omit one here?
-                assert np.all(specZcx_mask == specLDR_mask), f'masks not equal {specZcx} {specLDR}'
-                #specSNRco_mask = specSNRco == 0.
-                # print('specZ', specZ.shape, specZ)
-                # print('specLDR', specLDR.shape, specLDR)
-                # print('specSNRco', specSNRco.shape, specSNRco)
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
@@ -594,27 +683,15 @@ class peakTreeBuffer():
                 specLDR_mask = np.concatenate((specLDR_mask[-roll_velocity:], 
                                                specLDR_mask[:-roll_velocity]))
 
-            if 'span' in peak_finding_params:
-                window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
-                log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
-                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
-            else:
-                if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
-                    print('vel_smooth based on list')
-                    convol_window = peak_finding_params['vel_smooth']
-                    print('convol_window ', convol_window)
-                    specZ = np.convolve(specZ, convol_window, mode='same')
-                elif 'vel_smooth' in peak_finding_params:
-                    convol_window = np.array([0.5,1,0.5])/2.0
-                    print('convol_window ', convol_window)
-                    specZ = np.convolve(specZ, convol_window, mode='same')
-                else:
-                    print("! no smoothing applied")
+            vel_step = (self.velocity[1]-self.velocity[0])
+            window_length = h.round_odd(peak_finding_params['span']/vel_step)
+            log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+            specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
 
-            
+            peak_finding_params['vel_step'] = vel_step
+
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
-
             spectrum['specZ'] = specZ[:]
             spectrum['vel'] = velocity
             
@@ -648,7 +725,9 @@ class peakTreeBuffer():
             spectrum['decoupling'] = decoupling
 
             #                                     deep copy of dict 
-            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
+            #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
+            #travtree = {}
             
             return travtree, spectrum
 
@@ -1125,17 +1204,6 @@ class peakTreeBuffer():
             
             print('experimental rpgpy reader')
             # average_spectra step
-            t_avg = peak_finding_params['t_avg']
-            h_avg = peak_finding_params['h_avg']
-
-            if t_avg != 0:
-                it_slicer = slice(max(it-t_avg, 0), it+t_avg)
-            else:
-                it_slicer = slice(it, it+1)
-            if h_avg != 0:
-                ir_slicer = slice(max(ir-h_avg, 0), ir+h_avg)
-            else:
-                ir_slicer = slice(ir, ir+1)
             spec_chunk = self.doppler_spectrum[it_slicer,ir_slicer,:]
 
             # some parallel processing for debugging
@@ -1148,15 +1216,17 @@ class peakTreeBuffer():
             noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer,:] 
 
             mask_chunk = self.spectral_mask[it_slicer,ir_slicer,:]
-            spec_chunk[mask_chunk] = np.nan
-            rhv_chunk[mask_chunk] = np.nan
+            #spec_chunk[mask_chunk] = noise_h_bin[mask_chunk]
+            #rhv_chunk[mask_chunk] = np.nan
             #specLDR_chunk = (spec_chunk - (2*cov_re))/(spec_chunk + (2*cov_re))
             #
             # actually we are calculating SLDR
             #specLDR_chunk = 10*np.log10((1-rhv_chunk)/(1+rhv_chunk))
             specLDR_chunk = (1-rhv_chunk)/(1+rhv_chunk)
             # specZcx_chunk = spec_chunk*specLDR_chunk
-            no_averages = spec_chunk.shape[1]
+            #no_averages = spec_chunk.shape[1]
+            no_averages = np.prod(spec_chunk.shape[:-1])
+            print('no_averages', spec_chunk.shape[:-1], np.prod(spec_chunk.shape[:-1]))
 
             print('slicer', it_slicer, ir_slicer, 'shape', spec_chunk.shape)
             specZ = np.average(spec_chunk, axis=(0,1))
@@ -1169,6 +1239,7 @@ class peakTreeBuffer():
             noise_v = np.average(noise_v_bin, axis=(0,1))
 
             specLDR = np.average(specLDR_chunk, axis=(0,1))
+            mask = np.all(mask_chunk, axis=(0,1))
             print('spec shapes', specZ.shape, specLDR.shape)
             #print('spec_ldr', 10*np.log10(specLDR))
 
@@ -1181,7 +1252,7 @@ class peakTreeBuffer():
             noise_thres = noise_h[0]*3
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
-            ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
+            #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
             print('current chirp [zero-based index]', ind_chirp)
 
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
@@ -1197,7 +1268,9 @@ class peakTreeBuffer():
             print('span ', peak_finding_params['span'], ' window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
             specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
 
-            specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ))
+            peak_finding_params['vel_step'] = vel_step
+
+            specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ) | mask)
             specZ[specZ_mask] = 0
 
             # also SNRh
@@ -1216,7 +1289,8 @@ class peakTreeBuffer():
             #print('SNRco', h.lin2z(specSNRco))
             #print('SNRv', specSNRv)
             #print('SNRco', specSNRco)
-            specLDR_mask = ((specSNRv < 300) | (specSNRco < 300 | specZ_mask))
+            #print('LDR masks', (specSNRv < 300) , (specSNRco < 300) , (specZ_mask))
+            specLDR_mask = ((specSNRv < 10) | (specSNRco < 10) | specZ_mask)
 
             specLDRmasked = specLDR.copy()
             specLDRmasked[specLDR_mask] = np.nan
@@ -1267,6 +1341,7 @@ class peakTreeBuffer():
             #exit()
         else:
             timestamps_grid = self.timestamps
+        self.preload_averaging_grid()
 
         assert self.spectra_in_ram == True
         # self.Z = self.f.variables['Z'][:]
@@ -1294,17 +1369,20 @@ class peakTreeBuffer():
             log.info('it {:5d} ts {}'.format(it, ts))
             it_radar = time_index(self.timestamps, ts)
             log.debug('time {} {} {} radar {} {}'.format(it, h.ts_to_dt(timestamps_grid[it]), timestamps_grid[it], h.ts_to_dt(self.timestamps[it_radar]), self.timestamps[it_radar]))
-            if self.settings['grid_time']:
-                temp_avg = time_grid[3][it], time_grid[4][it]
-                log.debug("temp_avg {}".format(temp_avg))
+            #if self.settings['grid_time']:
+            #    temp_avg = time_grid[3][it], time_grid[4][it]
+            #    log.debug("temp_avg {}".format(temp_avg))
 
             for ir, rg in enumerate(self.range[:]):
-                log.debug("current iteration {} {} {}".format(h.ts_to_dt(timestamps_grid[it]), ir, rg))
+                log.debug("current iteration {} {} {} {}".format(it, h.ts_to_dt(timestamps_grid[it]), ir, rg))
+                #log.debug(f"temp average {temp_avg}")
                 #travtree, _ = self.get_tree_at(ts, rg, silent=True)
-                if self.settings['grid_time']:
-                    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
-                else:
-                    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
+                #if self.settings['grid_time']:
+                #    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), temporal_average=temp_avg, silent=True)
+                #else:
+                #    travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
+                # decouple time_grid and averaging
+                travtree, spectrum = self.get_tree_at((it_radar, self.timestamps[it_radar]), (ir, rg), silent=True)
 
                 node_ids = list(travtree.keys())
                 nodes_to_save = [i for i in node_ids if i < max_no_nodes]

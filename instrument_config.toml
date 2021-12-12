@@ -51,12 +51,15 @@
     station_altitude = 9
     #add_to_fname = '_rectwin'
 [Lacros_Pun.settings.peak_finding_params]
-    #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
-    #vel_smooth = [0.33,0.33,0.33]
     thres_factor_co = 6.0 # supress spurious peaks introduced by tails
     thres_factor_cx = 3.0
-    span = 0.1
+    # new: seconds instead of index
+    t_avg = 6            # s
+    h_avg = 0            # m
+    span = 0.3          # m s-1
     smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0.05   # m s-1
 
 
 [Polarstern]
@@ -65,7 +68,7 @@
 [Polarstern.settings]
     decoupling = -27
     smooth = true
-    grid_time = 10
+    #grid_time = 10
     max_no_nodes = 15
     thres_factor_co = 3.0
     thres_factor_cx = 3.0
@@ -78,7 +81,7 @@
 [Lindenberg.settings]
     decoupling = -25
     smooth = true
-    grid_time = false
+    #grid_time = false
     max_no_nodes = 15
     thres_factor_co = 3.0
     thres_factor_cx = 3.0
@@ -90,7 +93,7 @@
     shortname = "Dav"
 [Davos.settings]
     decoupling = -25
-    grid_time = false
+    #grid_time = false
     max_no_nodes = 15
     LDR = true
     station_altitude = 1627
@@ -104,7 +107,7 @@
     shortname = "kazrbaecc" 
     loader = 'kazr_legacy'
 [kazr_baecc.settings] 
-    grid_time = 6 
+    #grid_time = 6 
     max_no_nodes = 15 
     LDR = false 
     station_altitude = 181
@@ -120,7 +123,7 @@
     shortname = "kazrmosaic" 
     loader = 'kazr_new'
 [kazr_mosaic.settings] 
-    grid_time = 6 
+    #grid_time = 6 
     max_no_nodes = 15 
     LDR = false 
     station_altitude = 22
@@ -135,7 +138,7 @@
     shortname = "mwacrmosaic" 
     loader = 'kazr_new'
 [mwacr_mosaic.settings] 
-    grid_time = 5 
+    #grid_time = 5 
     max_no_nodes = 15 
     LDR = false 
     station_altitude = 22
@@ -151,7 +154,7 @@
     shortname = "kazrmdmosaic" 
     loader = 'kazr_new'
 [kazr_md_mosaic.settings] 
-    grid_time = 6 
+    #grid_time = 6 
     max_no_nodes = 15 
     LDR = false 
     station_altitude = 22
@@ -167,7 +170,7 @@
 [joyrad_nya.settings] 
     #smooth = true 
     smooth = 'broad' 
-    grid_time = 4 
+    #grid_time = 4 
     max_no_nodes = 15 
     # for joyrad test linear factor
     thres_factor_co = 2 
@@ -184,14 +187,63 @@
     grid_time = false
     max_no_nodes = 15 
     LDR = true 
+    tot_spec_scaling = 4
     decoupling = -30
     station_altitude = 22
-[limrad_peako.settings.peak_finding_params]
-    # as an interval index-t_avg:index+t_avg
-    t_avg = 0
-    h_avg = 0
-    # span in m s^-1
-    span = 0.3
+# chirps in zero-based indexing
+[limrad_peako.settings.peak_finding_params.chirp0]
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 100          # m
+    span = 0.15          # m s-1
     smooth_polyorder = 1
-    prom_thres = 0.5
-    width_thres = 2
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+[limrad_peako.settings.peak_finding_params.chirp1]
+    t_avg = 15           # s
+    h_avg = 0            # m
+    span = 0.2           # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+[limrad_peako.settings.peak_finding_params.chirp2]
+    t_avg = 15            # s
+    h_avg = 0            # m
+    span = 0.2           # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+
+[limrad_punta] 
+    location = "Punta Arenas"
+    shortname = "Pun"
+    loader = 'rpgpy'
+[limrad_punta.settings] 
+    grid_time = false
+    max_no_nodes = 15 
+    tot_spec_scaling = 2
+    LDR = true 
+    decoupling = -30
+    station_altitude = 22
+[limrad_punta.settings.peak_finding_params.chirp0]
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 100          # m
+    span = 0.15          # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+[limrad_punta.settings.peak_finding_params.chirp1]
+    t_avg = 15           # s
+    h_avg = 0            # m
+    span = 0.2           # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
+[limrad_punta.settings.peak_finding_params.chirp2]
+    t_avg = 15            # s
+    h_avg = 0            # m
+    span = 0.2           # m s-1
+    smooth_polyorder = 1
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1
