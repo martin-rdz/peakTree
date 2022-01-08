@@ -395,6 +395,9 @@ class peakTreeBuffer():
         self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp) 
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
+        scaling = self.settings['tot_spec_scaling']
+        log.warning(f"WARNING: the scaling factor is hard-coded, rpg software version > 5.40, configured are {scaling}")
+
         if load_to_ram == True:
             self.spectra_in_ram = True
             self.doppler_spectrum, spec_mask = h.masked_to_plain(self.f.variables['doppler_spectrum'][:])
@@ -406,23 +409,22 @@ class peakTreeBuffer():
             self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
             self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            scaling = self.settings['tot_spec_scaling']
-            print("WARNING: the scaling factor is hard-coded, rpg software version > 5.40, configured are ", scaling)
             self.doppler_spectrum_v = scaling*self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
 
             print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
-            noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-            self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
-            noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
-            self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+            self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
+            print(self.noise_h_per_bin.shape)
+            #self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+            self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
+            #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
 
             #rhv = np.abs(np.complex(cov_re, cov_im)/np.sqrt(()*(spec_chunk_h + spec_noise_h)))
             #print('shapes ', self.covariance_spectrum_re.shape, self.covariance_spectrum_im.shape, self.doppler_spectrum_v.shape, noise_v_per_bin.shape, 
             #    self.doppler_spectrum_h.shape, noise_h_per_bin.shape)
-            self.rhv = np.abs(self.covariance_spectrum_re + 1j * self.covariance_spectrum_im) / np.sqrt( 
-                (self.doppler_spectrum_v + self.noise_v_per_bin) * (self.doppler_spectrum_h + self.noise_h_per_bin) )
+            #self.rhv = np.abs(self.covariance_spectrum_re + 1j * self.covariance_spectrum_im) / np.sqrt( 
+            #    (self.doppler_spectrum_v + self.noise_v_per_bin[:,:,np.newaxis]) * (self.doppler_spectrum_h + self.noise_h_per_bin[:,:,np.newaxis]) )
 
 
 
@@ -945,7 +947,7 @@ class peakTreeBuffer():
 
         elif self.type == 'peako':
 
-            logger.warning('legacy peako loader, that loades the edges')
+            log.warning('legacy peako loader, that loades the edges')
             assert temporal_average == False
 
             specZ = h.z2lin(self.f.variables['spectra'][:,ir,it])
@@ -1004,12 +1006,18 @@ class peakTreeBuffer():
 
             # some parallel processing for debugging
             spec_v_chunk = self.doppler_spectrum_v[it_slicer,ir_slicer,:]
-            #spec_h_chunk = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
-            #cov_re_chunk = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
-            #cov_im_chunk = self.covariance_spectrum_im[it_slicer,ir_slicer,:]
-            rhv_chunk = self.rhv[it_slicer,ir_slicer,:] 
-            noise_h_bin = self.noise_h_per_bin[it_slicer,ir_slicer,:] 
-            noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer,:] 
+            spec_h_chunk = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
+            cov_re_chunk = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
+            cov_im_chunk = self.covariance_spectrum_im[it_slicer,ir_slicer,:]
+            #rhv_chunk = self.rhv[it_slicer,ir_slicer,:] 
+            noise_h_bin = self.noise_h_per_bin[it_slicer,ir_slicer] 
+            noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer] 
+
+            rhv_chunk = np.abs(cov_re_chunk + 1j * cov_im_chunk) / np.sqrt( 
+                (spec_v_chunk + noise_v_bin[:,:,np.newaxis]) * (spec_h_chunk + noise_h_bin[:,:,np.newaxis]) )
+
+            print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
+            print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
 
             mask_chunk = self.spectral_mask[it_slicer,ir_slicer,:]
             #spec_chunk[mask_chunk] = noise_h_bin[mask_chunk]
@@ -1034,9 +1042,10 @@ class peakTreeBuffer():
             noise_h = np.average(noise_h_bin, axis=(0,1))
             noise_v = np.average(noise_v_bin, axis=(0,1))
 
-            specLDR = np.average(specLDR_chunk, axis=(0,1))
+            specRhv = np.average(rhv_chunk, axis=(0,1))
+            #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
-            print('spec shapes', specZ.shape, specLDR.shape)
+            print('spec shapes', specZ.shape, specRhv.shape)
             #print('spec_ldr', 10*np.log10(specLDR))
 
             if np.all(np.isnan(specZ)):
@@ -1045,7 +1054,7 @@ class peakTreeBuffer():
 
             noise_mean = noise_h
             #noise_thres = np.min(specZ[np.isfinite(specZ)])*3
-            noise_thres = noise_h[0]*3
+            noise_thres = noise_h*3
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
@@ -1073,12 +1082,11 @@ class peakTreeBuffer():
             specSNRco = specZ/noise_h
             specSNRco_mask = specZ_mask.copy()
             print("noise_h {:5.3f}  noise_v {:5.3f}".format(
-                h.lin2z(noise_h[0]), h.lin2z(noise_v[0])))
+            #    h.lin2z(noise_h[0]), h.lin2z(noise_v[0])))
+                h.lin2z(noise_h), h.lin2z(noise_v)))
             
 
             # for the SLDR radar this is a rather hypothetical quantity
-            specZcx = specZ*specLDR
-            specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
             #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
             specSNRv = specZv/noise_v
             #print('SNRcx', h.lin2z(specSNRcx))
@@ -1086,29 +1094,35 @@ class peakTreeBuffer():
             #print('SNRv', specSNRv)
             #print('SNRco', specSNRco)
             #print('LDR masks', (specSNRv < 300) , (specSNRco < 300) , (specZ_mask))
-            specLDR_mask = ((specSNRv < 10) | (specSNRco < 10) | specZ_mask)
+            #specRhv_mask = ((specSNRv < 200) | (specSNRco < 200) | specZ_mask)
+            specRhv_mask = ((specSNRv < 100) | (specSNRco < 100) | specZ_mask)
 
-            specLDRmasked = specLDR.copy()
-            specLDRmasked[specLDR_mask] = np.nan
+            specRhvmasked = specRhv.copy()
+            # use 0 as mask instead of np.nan
+            specRhvmasked[specRhv_mask] = np.nan
+            specLDRmasked = (1-specRhvmasked)/(1+specRhvmasked)
+            specLDRmasked[specRhv_mask] = np.nan
+            #
+            # the Galetti formula does not like rhos larger 1.0 (those give LDRs < 0)
+            specLDRmasked[specRhv >= 1.0] = np.nan
+            specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
             # required for subpeak LDR calculation
-            specZcx_validcx = specZcx.copy()
-            specZcx_validcx[specLDR_mask] = 0
-            specZ_validcx = specZ.copy()
-            specZ_validcx[specLDR_mask] = 0
-
 
             assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
             spectrum = {
                 'ts': self.timestamps[it], 'range': self.range[ir], 
                 'vel': self.velocity[:,ind_chirp],
+                'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
-                'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
-                'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
-                'specLDR': specLDR, 'specLDR_mask': specLDR_mask,
-                'specLDRmasked': specLDRmasked,
+                #'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
+                #'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
+                'specRhv': specRhv, 'specRhv_mask': specRhv_mask,
+                'specRhvmasked': specRhvmasked,
                 'no_temp_avg': no_averages,
                 'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                'specLDRmasked': specLDRmasked,
+                'specSNRv': specSNRv, 
                 #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
                 #'noise_h': noise_h, 'noise_v': noise_v,
                 'decoupling': self.settings['decoupling'],
@@ -1296,7 +1310,7 @@ class peakTreeBuffer():
                               #'comment': "",
                               'units': "", 'missing_value': -999., 'plot_range': (0, max_no_nodes),
                               'plot_scale': "linear"})
-            if self.settings['LDR']:
+            if self.settings['polarimetry'] in ['STSR', 'LDR']:
                 saveVar(dataset, {'var_name': 'decoupling', 'dimension': ('mode'),
                                 'arr':  self.settings['decoupling'], 'long_name': "LDR decoupling",
                                 'units': "dB", 'missing_value': -999.})

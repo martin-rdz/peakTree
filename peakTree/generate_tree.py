@@ -370,7 +370,81 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     return moments, spectrum
 
 
-#@jit(fastmath=True)
+@jit(fastmath=True)
+def calc_moments_STSR(spectrum, bounds, thres, no_cut=False):
+    """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
+
+    Args:
+        spectrum: spectrum dict
+        bounds: boundaries (bin no)
+        thres: threshold used
+    Returns
+        moment, spectrum
+    """
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
+    # TODO add the masked processing for the moments
+    #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
+    if not no_cut:
+        masked_Z = h.fill_with(spectrum['specZ'][bounds[0]:bounds[1]+1], 
+                        np.logical_or(spectrum['specZ'][bounds[0]:bounds[1]+1]<thres, 
+                                    spectrum['specZ_mask'][bounds[0]:bounds[1]+1]), 0.0)
+    else:
+        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
+        masked_Z[:bounds[0]] = 0.0
+        masked_Z[bounds[1]+1:] = 0.0
+
+    # seemed to have been quite slow (84us per call or 24% of function)
+    mom = moment(spectrum['vel'][bounds[0]:bounds[1]+1], masked_Z)
+    moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
+
+    #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
+
+    prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
+    prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
+    moments['prominence'] = prominence if not prominence_mask else 1e-99
+    #assert np.all(validSNRco.mask == validSNRcx.mask)
+    #print('SNRco', h.lin2z(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
+    #print('SNRcx', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]))
+    #print('LDR', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]/spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
+    moments['z'] = Z
+    
+    # new try for the peak ldr (sum, then relative; not spectrum of relative with sum)
+    
+    # ldr calculation after the debugging session
+    Rhvmax = spectrum["specRhv"][bounds[0]:bounds[1]+1][ind_max]
+    ldrmax = (1-Rhvmax)/(1+Rhvmax)
+    if not np.all(spectrum['specRhv_mask']):
+        #ldr2 = np.nanmean(spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+        rhv = np.nanmean(spectrum['specRhvmasked'][bounds[0]:bounds[1]+1])
+        ldr2 = (1-rhv)/(1+rhv)
+        #print('specLDRmasked', spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+    else:
+        ldr2 = np.nan
+
+    decoup = 10**(spectrum['decoupling']/10.)
+    #print('ldr ', h.lin2z(ldr), ' ldrmax ', h.lin2z(ldrmax), 'new ldr ', h.lin2z(ldr2))
+    #print('ldr without decoup', h.lin2z(ldr-decoup), ' ldrmax ', h.lin2z(ldrmax-decoup), 'new ldr ', h.lin2z(ldr2-decoup))
+
+    #moments['ldr'] = ldr
+    # seemed to have been quite slow (79us per call or 22% of function)
+    #moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
+    if np.isfinite(ldr2) and not np.abs(ldr2) < 0.0001:
+        moments['ldr'] = ldr2
+    else:
+        moments['ldr'] = np.nan
+    #moments['ldr'] = ldr2-decoup
+    moments['ldrmax'] = ldrmax
+    #moments['ldrmax'] = np.nan
+
+    #moments['minv'] = spectrum['vel'][bounds[0]]
+    #moments['maxv'] = spectrum['vel'][bounds[1]]
+
+    return moments, spectrum
+
+
+
+@jit(fastmath=True)
 def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -696,7 +770,12 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
         for i in traversed.keys():
             print(i, traversed[i]['bounds'], h.lin2z(traversed[i]['thres']))
             #moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
-            moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            if spectrum['polarimetry'] == 'LDR':
+                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            elif spectrum['polarimetry'] == 'STSR':
+                moments, _ = calc_moments_STSR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+            elif spectrum['polarimetry'] == 'false':
+                moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             traversed[i].update(moments)
             #print('traversed tree')
             # if moments['v'] == 0.0 or not np.isfinite(moments['v']):

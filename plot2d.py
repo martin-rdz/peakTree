@@ -65,7 +65,11 @@ print(plot_time_interval)
 cat_cmap = matplotlib.colors.ListedColormap(
     ["#ffffff", "#cdbfbc", "#987b61", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
 cat_cmap = matplotlib.colors.ListedColormap(
-    ["#ffffff", "#cdbfbc", "orangered", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
+    #["#ffffff", "#cdbfbc", "orangered", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
+    ["#ffffff", "#cccccc", "#cc6677", "#88ccee", "#999933", "#332288"], 'pTcat')
+# based on paul tol (https://personal.sron.nl/~pault/)
+#cat_cmap = matplotlib.colors.ListedColormap(
+#    ["#ffffff", "#cccccc", "#cc6677", "#117733", "#33bbee", "#332288"], 'test')
 # We must be sure to specify the ticks matching our target names
 labels = {0: '0', 1: "1", 2: "3", 3: "5", 4: "7", 5: "9"}
 # number of peaks instead number of nodes

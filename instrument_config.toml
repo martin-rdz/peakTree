@@ -186,7 +186,8 @@
 [limrad_peako.settings] 
     grid_time = false
     max_no_nodes = 15 
-    LDR = true 
+    #LDR = true 
+    polarimetry = 'STSR' 
     tot_spec_scaling = 4
     decoupling = -30
     station_altitude = 22
@@ -222,7 +223,7 @@
     grid_time = false
     max_no_nodes = 15 
     tot_spec_scaling = 2
-    LDR = true 
+    polarimetry = 'STSR' 
     decoupling = -30
     station_altitude = 22
 [limrad_punta.settings.peak_finding_params.chirp0]

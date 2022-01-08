@@ -130,6 +130,7 @@ def plot_spectrum(travtree, spectrum, savepath):
     if 'specLDR' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specLDR']), 
                 linewidth=1.5, color='turquoise', where='mid', label='specLDR')
+    if 'specLDRmasked' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specLDRmasked']), 
                 linewidth=1.5, color='blue', where='mid', label='specLDR')
 
