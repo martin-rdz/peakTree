@@ -20,6 +20,7 @@ from . import helpers as h
 from . import print_tree
 from . import generate_tree
 import toml
+import scipy
 
 log = logging.getLogger(__name__)
 # log.setLevel(logging.DEBUG)
@@ -125,8 +126,14 @@ def get_git_hash():
     Returns:
         git describe string
     """
-    label = subprocess.check_output(['git', 'describe', '--always'])
-    return label.rstrip()
+    try:
+        commit = subprocess.check_output(['git', 'describe', '--always'])
+        branch = subprocess.check_output(['git', 'branch', '--show-current'])
+    except:
+        commit = 'git error'
+        branch = 'git error'
+        log.warning(commit)
+    return commit.rstrip(), branch.rstrip()
 
 
 def time_index(timestamps, sel_ts):
@@ -513,7 +520,9 @@ class peakTreeBuffer():
 
     #@profile
     def get_tree_at(self, sel_ts, sel_range, temporal_average='fromparams', 
-                    roll_velocity=False, peak_finding_params={}, silent=False):
+                    roll_velocity=False, peak_finding_params={}, 
+                    tail_filter=False,
+                    silent=False):
         """get a single tree
         either from the spectrum directly (prior call of load_spec_file())
         or from the pre-converted file (prior call of load_peakTree_file())
@@ -589,9 +598,9 @@ class peakTreeBuffer():
                 #specZ = specZ_2d.mean(axis=1)
                 specZ = np.average(specZ_2d, axis=(1,2))
             else:
-                specZ = self.f.variables['Z'][:,ir_slicer,it_slicer][:]
+                specZ = self.f.variables['Z'][:,ir_slicer,it_slicer][:].filled()
                 no_averages = specZ.shape[1]
-                specLDR = self.f.variables['LDR'][:,ir_slicer,it_slicer][:]
+                specLDR = self.f.variables['LDR'][:,ir_slicer,it_slicer][:].filled()
                 specZcx = specZ*specLDR
                 specZcx = specZcx.mean(axis=(1,2))
                 specZ = specZ.mean(axis=(1,2))
@@ -653,7 +662,32 @@ class peakTreeBuffer():
             vel_step = (self.velocity[1]-self.velocity[0])
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
             log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
-            specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+
+            specZ_raw = specZ.copy()
+
+            # for noise separeated peaks 0 is a better fill value
+            if type(tail_filter) == list:
+                log.warning('tail filter applied')
+                noise_tail = h.gauss_func_offset(velocity, *tail_filter)
+                specZ[specZ < h.z2lin(noise_tail + 3)] = np.nan
+                tail_filter_applied = True
+                print('tail filter applied, ', tail_filter_applied, tail_filter)
+            else:
+                tail_filter_applied = False
+        
+            # --------------------------------------------------------------------
+            # smoothing and cutting. the order can be defined in instrument_config
+            if self.settings['smooth_cut_sequence'] == 'cs':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            if peak_finding_params['smooth_polyorder'] != 0:
+                specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+            if self.settings['smooth_cut_sequence'] == 'sc':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            
+            # TODO add for other versions
+            specZ_mask = np.logical_or(specZ_mask, specZ < noise_thres)
+            specZ_mask = np.logical_or(specZ_mask, ~np.isfinite(specZ))
 
             peak_finding_params['vel_step'] = vel_step
 
@@ -661,6 +695,12 @@ class peakTreeBuffer():
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
             spectrum['specZ'] = specZ[:]
             spectrum['vel'] = velocity
+
+            if tail_filter_applied:     
+                spectrum['tail_filter'] = tail_filter
+
+            # unsmoothed spectrum
+            spectrum['specZ_raw'] = specZ_raw[:]
             
             spectrum['specZ_mask'] = specZ_mask[:]
             #spectrum['specSNRco'] = specSNRco[:]
@@ -690,11 +730,38 @@ class peakTreeBuffer():
             spectrum['specZ_validcx'][Zcx_mask] = 0.0
 
             spectrum['decoupling'] = decoupling
+            spectrum['polarimetry'] = self.settings['polarimetry']
 
             #                                     deep copy of dict 
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
             travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
             #travtree = {}
+            
+
+            # an agressive tail filter would have to act here?
+            if (travtree 
+                 and 'tail_filter' in peak_finding_params
+                 and peak_finding_params['tail_filter'] is True
+                 and h.lin2z(travtree[0]['z']) > -7 
+                 #and travtree[0]['width'] < 0.22 and not tail_filter_applied):
+                 and travtree[0]['width'] < 0.31 and not tail_filter_applied):
+
+                # strategy 1 fit here
+                # alternative parametrize more strongly
+                log.warning(f'Tails might occur here {sel_ts} {sel_range}')
+                ind_vel_node0 = np.searchsorted(spectrum['vel'], travtree[0]['v'])
+                no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
+                no_ind *= 0.40
+                fit_spec = h.lin2z(specZ_raw.copy())
+                #fit_spec[ind_vel_node0-int(no_ind/2):ind_vel_node0+int(no_ind/2)] = np.nan
+                fit_spec[fit_spec > h.lin2z(noise_thres) + 10] = np.nan
+                print('noise thres ', h.lin2z(noise_thres),h.lin2z(noise_thres) + 15)
+                fit_mask = np.isfinite(fit_spec)
+                popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])
+                travtree, spectrum = self.get_tree_at(
+                    sel_ts, sel_range, temporal_average=temporal_average, 
+                    roll_velocity=roll_velocity, peak_finding_params=peak_finding_params, 
+                    tail_filter=popt.tolist(), silent=silent)
             
             return travtree, spectrum
 
@@ -810,7 +877,8 @@ class peakTreeBuffer():
             if 'span' in peak_finding_params:
                 window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
                 log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
-                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+                specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                        polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
             else:
                 if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
                     print('vel_smooth based on list')
@@ -832,6 +900,7 @@ class peakTreeBuffer():
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
                 'vel': velocity, 
+                'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres, 
                 'specZ_mask': specZ_mask, 
                 'no_temp_avg': no_averages, 
@@ -911,7 +980,8 @@ class peakTreeBuffer():
             if 'span' in peak_finding_params:
                 window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
                 log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
-                specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+                specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                        polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
             else:
                 if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
                     print('vel_smooth based on list')
@@ -934,6 +1004,7 @@ class peakTreeBuffer():
             spectrum = { 
                 'ts': self.timestamps[it], 'range': self.range[ir],  
                 'vel': velocity, 
+                'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres, 
                 'specZ_mask': specZ_mask, 
                 'no_temp_avg': no_averages, 
@@ -979,6 +1050,7 @@ class peakTreeBuffer():
             spectrum = {
                 'ts': self.timestamps[it], 'range': self.range[ir], 
                 'vel': self.velocity,
+                'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
                 'no_temp_avg': 0,
@@ -1014,7 +1086,7 @@ class peakTreeBuffer():
             noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer] 
 
             rhv_chunk = np.abs(cov_re_chunk + 1j * cov_im_chunk) / np.sqrt( 
-                (spec_v_chunk + noise_v_bin[:,:,np.newaxis]) * (spec_h_chunk + noise_h_bin[:,:,np.newaxis]) )
+                (spec_v_chunk + noise_v_bin[:,:,np.newaxis]) * (spec_h_chunk + noise_h_bin[:,:,np.newaxis]))
 
             print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
             print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
@@ -1042,11 +1114,15 @@ class peakTreeBuffer():
             noise_h = np.average(noise_h_bin, axis=(0,1))
             noise_v = np.average(noise_v_bin, axis=(0,1))
 
-            specRhv = np.average(rhv_chunk, axis=(0,1))
+            specRhv = np.average(rhv_chunk, axis=(0,1)).filled(np.nan)
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
             print('spec shapes', specZ.shape, specRhv.shape)
             #print('spec_ldr', 10*np.log10(specLDR))
+
+            assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
+            assert not isinstance(specZv, np.ma.core.MaskedArray), "Zv not np.ndarray"
+            assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
 
             if np.all(np.isnan(specZ)):
                 print('empty spectrum', ir, it)
@@ -1071,11 +1147,26 @@ class peakTreeBuffer():
             vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
             print('span ', peak_finding_params['span'], ' window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
-            specZ = scipy.signal.savgol_filter(specZ, window_length, polyorder=1, mode='nearest')
+
+            specZ_raw = specZ.copy()
+
+            # --------------------------------------------------------------------
+            # smoothing and cutting. the order can be defined in instrument_config
+            if self.settings['smooth_cut_sequence'] == 'cs':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            if peak_finding_params['smooth_polyorder'] != 0:
+                specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+            if self.settings['smooth_cut_sequence'] == 'sc':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            
+            # TODO add for other versions
+            specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ) | mask)
+            specZ_mask = np.logical_or(specZ_mask, specZ < noise_thres)
+            specZ_mask = np.logical_or(specZ_mask, ~np.isfinite(specZ))
 
             peak_finding_params['vel_step'] = vel_step
 
-            specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ) | mask)
             specZ[specZ_mask] = 0
 
             # also SNRh
@@ -1115,6 +1206,7 @@ class peakTreeBuffer():
                 'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
+                'specZ_raw': specZ_raw,
                 #'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
                 #'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
                 'specRhv': specRhv, 'specRhv_mask': specRhv_mask,
@@ -1143,6 +1235,11 @@ class peakTreeBuffer():
             outdir: directory for the output
         """
         #self.timestamps = self.timestamps[:10]
+        with open('output_meta.toml') as output_meta:
+            meta_info = toml.loads(output_meta.read())
+            if meta_info['contact'] == 'default':
+                log.warning('Please specify your contact and institution in output_meta.toml before proceeding!')
+                input()
 
         if self.settings['grid_time']:
             time_grid = get_time_grid(self.timestamps, (self.timestamps[0], self.timestamps[-1]), self.settings['grid_time'])
@@ -1342,8 +1439,6 @@ class peakTreeBuffer():
                               'units': "m s-1", 'missing_value': -999., 'plot_range': (0, 2),
                               'plot_scale': "linear"})
 
-            with open('output_meta.toml') as output_meta:
-                meta_info = toml.loads(output_meta.read())
 
             dataset.description = 'peakTree processing'
             dataset.location = self.location
@@ -1351,7 +1446,8 @@ class peakTreeBuffer():
             dataset.contact = meta_info["contact"]
             dataset.creation_time = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
             dataset.settings = str(self.settings)
-            dataset.commit_id = self.git_hash
+            dataset.commit_id = self.git_hash[0]
+            dataset.branch = self.git_hash[1]
             dataset.day = str(self.begin_dt.day)
             dataset.month = str(self.begin_dt.month)
             dataset.year = str(self.begin_dt.year)

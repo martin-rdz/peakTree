@@ -9,6 +9,7 @@ Author: radenz@tropos.de
 
 import datetime
 import numpy as np
+import scipy
 from numba import jit
 
 
@@ -105,6 +106,25 @@ def gauss_func(x, m, sd):
     """
     a = 1. / (sd * np.sqrt(2. * np.pi))
     return a * np.exp(-(x - m) ** 2 / (2. * sd ** 2))
+
+# slightly different formulation for the tail filter
+@jit(nopython=True, fastmath=True)
+def gauss_func_offset(x, H, A, x0, sigma):
+    """x, H, A, x0, sigma"""
+    return H + A * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+
+def gauss_fit(x, y):
+    mean = sum(x * y) / sum(y)
+    sigma = np.sqrt(sum(y * (x - mean) ** 2) / sum(y))
+    #print('init guess ', [min(y), max(y)-min(y), mean, sigma])
+    popt, pcov = scipy.optimize.curve_fit(
+        gauss_func_offset, x, y, 
+        p0=[min(y), max(y)-min(y), mean, sigma],
+        #bounds=[(-57, 9, -4, 0.4), (-35, 18, 4, 2)],
+        bounds=[(-np.inf, 9, -np.inf, -np.inf), (np.inf, 18, np.inf, np.inf)]
+        )
+    return popt, pcov
+
 
 @jit(nopython=True, fastmath=True)
 def estimate_noise(spec, mov_avg=1):

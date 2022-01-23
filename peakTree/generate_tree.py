@@ -189,7 +189,7 @@ class Node():
             #    pass 
 
     def __str__(self):
-        string = str(self.level) + ' ' + self.level*'  ' + str(self.bounds) + "   [{:4.3e}]".format(self.threshold)
+        string = str(self.level) + ' ' + self.level*'  ' + str(self.bounds) + "   [{:4.1f}]".format(h.lin2z(self.threshold))
         return "{}\n{}".format(string, ''.join([t.__str__() for t in self.children]))
 
 
@@ -293,15 +293,16 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     Returns
         moment, spectrum
     """
-    Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
+    mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1]
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1][~mask].sum()
     # TODO add the masked processing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:
         masked_Z = h.fill_with(spectrum['specZ'][bounds[0]:bounds[1]+1], 
                         np.logical_or(spectrum['specZ'][bounds[0]:bounds[1]+1]<thres, 
-                                    spectrum['specZ_mask'][bounds[0]:bounds[1]+1]), 0.0)
+                                      mask), 0.0)
     else:
-        masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
+        masked_Z = h.fill_with(spectrum['specZ'], mask, 0.0)
         masked_Z[:bounds[0]] = 0.0
         masked_Z[bounds[1]+1:] = 0.0
 
@@ -316,7 +317,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
-    prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
+    prominence_mask = mask[ind_max]
     moments['prominence'] = prominence if not prominence_mask else 1e-99
     #assert np.all(validSNRco.mask == validSNRcx.mask)
     #print('SNRco', h.lin2z(spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
@@ -501,7 +502,7 @@ def tree_from_spectrum(spectrum, peak_finding_params):
     #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
     peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
-    print(peak_ind, h.lin2z(spectrum['noise_thres']))
+    print(f"noise thres per peak {peak_ind} {h.lin2z(spectrum['noise_thres']):.3f}")
     # filter all peaks with that are only 1 bin wide
     peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
     if peak_ind:
@@ -736,7 +737,6 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
     if np.any(np.unique(h.lin2z(masked_Z_pf)[locs], return_counts=True)[1] > 1):
         locs, props = fix_peaks_unique(locs, props)
     bounds = bounds_from_find_peak(locs, props)
-    print('bounds ',bounds)
     #le, re = find_edges(h.lin2z(masked_Z_pf), h.lin2z(spectrum['noise_thres']), locs)
     # when locs are sorted, this cuts the rightmost peaks
     #locs = locs[0: max_peaks] if len(locs) > max_peaks else locs
@@ -749,7 +749,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
     if not all([e[0]<e[1] for e in bounds]):
         bounds = []
     noise_sep, internal = h.divide_bounds(bounds)
-    print("{} => {} {}".format(bounds, noise_sep, internal))
+    print("sep internal {} => {} {}".format(bounds, noise_sep, internal))
 
     # the internal peaks have to be sorted by their height
     # otherwise the tree will not be build correctly
@@ -768,7 +768,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
         print(t)
         traversed = coords_to_id(list(traverse(t, [0])))
         for i in traversed.keys():
-            print(i, traversed[i]['bounds'], h.lin2z(traversed[i]['thres']))
+            #print(i, traversed[i]['bounds'], h.lin2z(traversed[i]['thres']))
             #moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             if spectrum['polarimetry'] == 'LDR':
                 moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
@@ -776,6 +776,9 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
                 moments, _ = calc_moments_STSR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             elif spectrum['polarimetry'] == 'false':
                 moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+
+            if 'cal_offset' in peak_finding_params:
+                moments['z'] *= h.z2lin(peak_finding_params['cal_offset'])
             traversed[i].update(moments)
             #print('traversed tree')
             # if moments['v'] == 0.0 or not np.isfinite(moments['v']):

@@ -66,7 +66,10 @@ cat_cmap = matplotlib.colors.ListedColormap(
     ["#ffffff", "#cdbfbc", "#987b61", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
 cat_cmap = matplotlib.colors.ListedColormap(
     #["#ffffff", "#cdbfbc", "orangered", "#fdff99", "#35d771", "#1177dd"], 'terrain_seq')
-    ["#ffffff", "#cccccc", "#cc6677", "#88ccee", "#999933", "#332288"], 'pTcat')
+    #["#ffffff", "#cccccc", "#cc6677", "#88ccee", "#999933", "#332288"], 'pTcat')
+    ["#ffffff", "#cccccc", "#cc6677", "#88ccee", "#eecc66", "#332288"], 'pTcat') # yellow
+    #based on paul tol vibrant
+    #["#ffffff", "#cccccc", "#ee3377", "#33bbee", "#ee7733", "#0077bb"], 'pTcat') 
 # based on paul tol (https://personal.sron.nl/~pault/)
 #cat_cmap = matplotlib.colors.ListedColormap(
 #    ["#ffffff", "#cccccc", "#cc6677", "#117733", "#33bbee", "#332288"], 'test')
