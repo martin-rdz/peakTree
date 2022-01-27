@@ -739,10 +739,10 @@ class peakTreeBuffer():
             #travtree = {}
             
 
-            no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
             if (travtree 
                  and 'tail_filter' in peak_finding_params
                  and peak_finding_params['tail_filter'] is True):
+                no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
                 print('tail criterion? ', no_ind * vel_step, '>', 9 * travtree[0]['width']) 
             # an agressive tail filter would have to act here?
             if (travtree 
