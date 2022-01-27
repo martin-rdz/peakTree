@@ -49,6 +49,8 @@ if args.config == 'Lacros_Pun':
     #files = [f for f in files if "T1300_" in f]
     files = [f for f in files if "v2.0" in f]
 
+print('doing only ', files)
+
 for f in sorted(files)[:]:
     print('now doing ', f)
     pTB.load(path+f, load_to_ram=True)
