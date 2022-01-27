@@ -58,7 +58,7 @@
     cal_offset = 0        # dB
     tail_filter = true    # true | false | omit; only tested with LACROS-Mira 
     # new: seconds instead of index
-    t_avg = 0             # s
+    t_avg = 5             # s
     h_avg = 0             # m
     span = 0.3            # m s-1
     smooth_polyorder = 2  # 0 deactivate | 2 second order

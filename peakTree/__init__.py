@@ -578,7 +578,8 @@ class peakTreeBuffer():
         log.debug('timerange {} {} {} '.format(str(it_slicer), h.ts_to_dt(slicer_sel_ts[0]), h.ts_to_dt(slicer_sel_ts[-1]))) if not silent else None
         assert slicer_sel_ts[-1] - slicer_sel_ts[0] < 20, 'found averaging range too large'
 
-        print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer)
+        print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer, 
+              '      it ', it_b, it, it_e, slicer_sel_ts)
         print(self.range[max(ir_b, ir_min)], self.range[ir], self.range[min(ir_e, ir_max)])
 
         if self.type == 'spec':
@@ -669,7 +670,7 @@ class peakTreeBuffer():
             if type(tail_filter) == list:
                 log.warning('tail filter applied')
                 noise_tail = h.gauss_func_offset(velocity, *tail_filter)
-                specZ[specZ < h.z2lin(noise_tail + 3)] = np.nan
+                specZ[specZ < h.z2lin(noise_tail + 4)] = np.nan
                 tail_filter_applied = True
                 print('tail filter applied, ', tail_filter_applied, tail_filter)
             else:
@@ -738,23 +739,29 @@ class peakTreeBuffer():
             #travtree = {}
             
 
+            no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
+            if (travtree 
+                 and 'tail_filter' in peak_finding_params
+                 and peak_finding_params['tail_filter'] is True):
+                print('tail criterion? ', no_ind * vel_step, '>', 9 * travtree[0]['width']) 
             # an agressive tail filter would have to act here?
             if (travtree 
                  and 'tail_filter' in peak_finding_params
                  and peak_finding_params['tail_filter'] is True
                  and h.lin2z(travtree[0]['z']) > -7 
                  #and travtree[0]['width'] < 0.22 and not tail_filter_applied):
-                 and travtree[0]['width'] < 0.31 and not tail_filter_applied):
+                 #and travtree[0]['width'] < 0.31 
+                 and no_ind * vel_step > 9 * travtree[0]['width'] 
+                 and not tail_filter_applied):
 
                 # strategy 1 fit here
                 # alternative parametrize more strongly
                 log.warning(f'Tails might occur here {sel_ts} {sel_range}')
                 ind_vel_node0 = np.searchsorted(spectrum['vel'], travtree[0]['v'])
-                no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
                 no_ind *= 0.40
                 fit_spec = h.lin2z(specZ_raw.copy())
                 #fit_spec[ind_vel_node0-int(no_ind/2):ind_vel_node0+int(no_ind/2)] = np.nan
-                fit_spec[fit_spec > h.lin2z(noise_thres) + 10] = np.nan
+                fit_spec[fit_spec > h.lin2z(noise_thres) + 13] = np.nan
                 print('noise thres ', h.lin2z(noise_thres),h.lin2z(noise_thres) + 15)
                 fit_mask = np.isfinite(fit_spec)
                 popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])

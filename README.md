@@ -104,5 +104,5 @@ python3 convert_to_json.py output/20170629_0830_Pol_peakTree.nc4 output/20170629
 ```
 
 ### License
-Copyright 2022, Martin Radenz
+Copyright 2022, Martin Radenz, Teresa Vogl
 [MIT License](<http://www.opensource.org/licenses/mit-license.php>)

@@ -1,4 +1,7 @@
-numpy==1.14.5
+numpy==1.21
+numba
+toml
+scipy
 graphviz==0.8.2
 matplotlib==2.2.2
 netCDF4==1.4.2

@@ -61,8 +61,8 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'peakTree'
-copyright = '2022, Martin Radenz'
-author = 'Martin Radenz'
+copyright = '2022, Martin Radenz, Teresa Vogl'
+author = 'Martin Radenz, Teresa Vogl'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

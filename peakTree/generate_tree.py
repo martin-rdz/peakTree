@@ -122,7 +122,7 @@ class Node():
         # prominence filter  2dB (Shupe 2004) or even 6 (Williams 2018)
         #print('at node ', bounds, h.lin2z(noise_thres), spec_chunk)
 
-    def add_noise_sep(self, bounds_left, bounds_right, thres):
+    def add_noise_sep(self, bounds_left, bounds_right, thres, ignore_prom=False):
         """add a nose separated peak/node
         
         Args:
@@ -140,7 +140,9 @@ class Node():
             spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
             prom_left = spec_left[spec_left.argmax()]/thres
             prom_right = spec_right[spec_right.argmax()]/thres
-            if prom_left > self.prom_filter and prom_right > self.prom_filter:
+
+            cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
+            if all(cond_prom) or ignore_prom:
                 self.children.append(Node(bounds_left, spec_left, thres, self.prom_filter, parent_lvl=self.level))
                 self.children.append(Node(bounds_right, spec_right, thres, self.prom_filter, self.prom_filter, parent_lvl=self.level))
             else:
@@ -745,7 +747,6 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
 
     # and now the peaktree part
     # take ideas from the first implementation
-
     if not all([e[0]<e[1] for e in bounds]):
         bounds = []
     noise_sep, internal = h.divide_bounds(bounds)
@@ -760,8 +761,8 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
                 spectrum['specZ'][noise_sep[0][0]:noise_sep[-1][-1]+1], 
                 spectrum['noise_thres'], peak_finding_params['prom_thres'], root=True)
         for peak_pair in peak_pairs_to_call(noise_sep):
-            # print('peak pair', peak_pair)
-            t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'])
+            t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum['noise_thres'],
+                            ignore_prom=True)
         for m in internal:
             t.add_min(m, spectrum['specZ'][m], ignore_prom=True)
 
