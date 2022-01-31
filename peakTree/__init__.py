@@ -579,7 +579,7 @@ class peakTreeBuffer():
         assert slicer_sel_ts[-1] - slicer_sel_ts[0] < 20, 'found averaging range too large'
 
         print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer, 
-              '      it ', it_b, it, it_e, slicer_sel_ts)
+              '      it ', it_b, it, it_e, slicer_sel_ts.tolist())
         print(self.range[max(ir_b, ir_min)], self.range[ir], self.range[min(ir_e, ir_max)])
 
         if self.type == 'spec':
@@ -764,11 +764,19 @@ class peakTreeBuffer():
                 fit_spec[fit_spec > h.lin2z(noise_thres) + 13] = np.nan
                 print('noise thres ', h.lin2z(noise_thres),h.lin2z(noise_thres) + 15)
                 fit_mask = np.isfinite(fit_spec)
-                popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])
-                travtree, spectrum = self.get_tree_at(
-                    sel_ts, sel_range, temporal_average=temporal_average, 
-                    roll_velocity=roll_velocity, peak_finding_params=peak_finding_params, 
-                    tail_filter=popt.tolist(), silent=silent)
+                try:
+                    popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])
+                    successful_fit = True
+                except:
+                    successful_fit = False
+                    log.warning('fit failed')
+                    input()
+
+                if successful_fit:
+                    travtree, spectrum = self.get_tree_at(
+                        sel_ts, sel_range, temporal_average=temporal_average, 
+                        roll_velocity=roll_velocity, peak_finding_params=peak_finding_params, 
+                        tail_filter=popt.tolist(), silent=silent)
             
             return travtree, spectrum
 
