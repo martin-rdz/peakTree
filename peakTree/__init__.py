@@ -634,7 +634,7 @@ class peakTreeBuffer():
 
 
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*h.z2lin(peak_finding_params['thres_factor_co'])
+            noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
 
             velocity = self.velocity.copy()
             if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
@@ -719,7 +719,7 @@ class peakTreeBuffer():
             #spectrum['specSNRcx'] = spectrum['specSNRco']*spectrum['specLDR']
             #spectrum['specSNRcx_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specLDR_mask'])
 
-            thres_Zcx = np.nanmin(spectrum['specZcx'])*h.z2lin(peak_finding_params['thres_factor_cx'])
+            thres_Zcx = np.nanmin(spectrum['specZcx'])*peak_finding_params['thres_factor_cx']
             Zcx_mask = np.logical_or(spectrum['specZcx'] < thres_Zcx, ~np.isfinite(spectrum['specZcx']))
             spectrum['specLDRmasked'] = spectrum['specLDR'].copy()
             spectrum['specLDRmasked'][Zcx_mask] = np.nan
@@ -1143,9 +1143,18 @@ class peakTreeBuffer():
                 print('empty spectrum', ir, it)
                 return {}, {}
 
-            noise_mean = noise_h
+            # TV: noise_v should be more suitable
+            noise_mean = noise_v
             #noise_thres = np.min(specZ[np.isfinite(specZ)])*3
-            noise_thres = noise_h*3
+            #noise_thres = noise_h*3
+            if ('thres_factor_co' in peak_finding_params 
+                and peak_finding_params['thres_factor_co']):
+                noise_thres = noise_v * peak_finding_params['thres_factor_co']
+                print('! USE', peak_finding_params['thres_factor_co'])
+            else:
+                noise_thres = np.min(specZ[~mask])
+                print('! USE', peak_finding_params['thres_factor_co'])
+
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1

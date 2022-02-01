@@ -14,8 +14,8 @@
 [Lacros_Lim.settings.peak_finding_params]
     #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
     #vel_smooth = [0.33,0.33,0.33]
-    thres_factor_co = 6.0 # supress spurious peaks introduced by tails
-    thres_factor_cx = 3.0
+    thres_factor_co = 4.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     span = 0.1
     smooth_polyorder = 1
 
@@ -32,8 +32,8 @@
     LDR = true
     station_altitude = -1
 [Lacros_at_ACCEPT.settings.peak_finding_params]
-    thres_factor_co = 3.0 # supress spurious peaks introduced by tails
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     span = 0.1
     smooth_polyorder = 1
 
@@ -52,9 +52,9 @@
     station_altitude = 9
     #add_to_fname = '_rectwin'
 [Lacros_Pun.settings.peak_finding_params]
-    thres_factor_co = 4.0 # supress spurious peaks introduced by tails
-                          # back to 3 as the other tail filter should work better
-    thres_factor_cx = 3.0
+    # supress spurious peaks introduced by tails; back to 3 as the other tail filter should work better
+    thres_factor_co = 2.5 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     cal_offset = 0        # dB
     tail_filter = true    # true | false | omit; only tested with LACROS-Mira 
     # new: seconds instead of index
@@ -74,8 +74,8 @@
     smooth = true
     #grid_time = 10
     max_no_nodes = 15
-    thres_factor_co = 3.0
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     LDR = true
     station_altitude = 12
 
@@ -87,8 +87,8 @@
     smooth = true
     #grid_time = false
     max_no_nodes = 15
-    thres_factor_co = 3.0
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     LDR = true
     station_altitude = 100
 
@@ -103,8 +103,8 @@
     station_altitude = 1627
 [Davos.settings.peak_finding_params]
     vel_smooth = true
-    thres_factor_co = 6.0 # supress spurious peaks introduced by tails
-    thres_factor_cx = 3.0
+    thres_factor_co = 4.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
 
 [kazr_baecc] 
     location = "Hyytiala" 
@@ -119,8 +119,8 @@
     #vel_smooth = true
     # original setting from the v0.2 relase
     vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
-    thres_factor_co = 3.0 
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
 
 [kazr_mosaic] 
     location = "MOSAiC" 
@@ -134,8 +134,8 @@
 [kazr_mosaic.settings.peak_finding_params]
     #vel_smooth = true
     vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
-    thres_factor_co = 3.0 
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
 
 [mwacr_mosaic] 
     location = "MOSAiC" 
@@ -149,8 +149,8 @@
 [mwacr_mosaic.settings.peak_finding_params]
     #vel_smooth = true
     vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
-    thres_factor_co = 3.0 
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
     prom_thres = 0.5 # = 1.0 if omitted
 
 [kazr_md_mosaic] 
@@ -165,8 +165,8 @@
 [kazr_md_mosaic.settings.peak_finding_params]
     #vel_smooth = true
     vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
-    thres_factor_co = 3.0 
-    thres_factor_cx = 3.0
+    thres_factor_co = 2.0 # false | factor in linear units
+    thres_factor_cx = 2.0 # false | factor in linear units
 
 [joyrad_nya] 
     location = "Ny-Alesund" 
@@ -177,8 +177,8 @@
     #grid_time = 4 
     max_no_nodes = 15 
     # for joyrad test linear factor
-    thres_factor_co = 2 
     #thres_factor_cx = 3.0 
+    thres_factor_co = 1.5 # false | factor in linear units
     LDR = false 
     station_altitude = 10
 
@@ -233,6 +233,7 @@
     decoupling = -30
     station_altitude = 22
 [limrad_punta.settings.peak_finding_params.chirp0]
+    thres_factor_co = false # false | factor in linear units
     # new: seconds instead of index
     t_avg = 0            # s
     h_avg = 89          # m
@@ -241,6 +242,7 @@
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_punta.settings.peak_finding_params.chirp1]
+    thres_factor_co = false # false | factor in linear units
     t_avg = 9           # s
     h_avg = 0            # m
     span = 0.05           # m s-1
@@ -248,6 +250,7 @@
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_punta.settings.peak_finding_params.chirp2]
+    thres_factor_co = false # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m
     span = 0.2           # m s-1
