@@ -1150,10 +1150,8 @@ class peakTreeBuffer():
             if ('thres_factor_co' in peak_finding_params 
                 and peak_finding_params['thres_factor_co']):
                 noise_thres = noise_v * peak_finding_params['thres_factor_co']
-                print('! USE', peak_finding_params['thres_factor_co'])
             else:
-                noise_thres = np.min(specZ[~mask])
-                print('! USE', peak_finding_params['thres_factor_co'])
+                noise_thres = np.min(specZ[~mask]) if len(specZ[~mask]) > 0 else 1e-25
 
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
