@@ -407,7 +407,7 @@ class peakTreeBuffer():
 
         if load_to_ram == True:
             self.spectra_in_ram = True
-            self.doppler_spectrum, spec_mask = h.masked_to_plain(self.f.variables['doppler_spectrum'][:])
+            self.doppler_spectrum, spec_mask = h.masked_to_plain(scaling*self.f.variables['doppler_spectrum'][:])
             self.doppler_spectrum_h, spec_h_mask = h.masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
             self.covariance_spectrum_re, cov_re_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
             self.covariance_spectrum_im, cov_im_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
@@ -416,7 +416,7 @@ class peakTreeBuffer():
             self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
             self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            self.doppler_spectrum_v = scaling*self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+            self.doppler_spectrum_v = self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
 
