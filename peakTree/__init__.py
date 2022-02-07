@@ -403,7 +403,9 @@ class peakTreeBuffer():
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
         scaling = self.settings['tot_spec_scaling']
-        log.warning(f"WARNING: the scaling factor is hard-coded, rpg software version > 5.40, configured are {scaling}")
+        log.warning(f"WARNING: Taking scaling factor from config file. It should be 1 for RPG software version > 5.40, "
+                    f"and 0.5 for earlier software versions (around 2020). Only applicable for STSR radar. Configured "
+                    f"are {scaling}")
 
         if load_to_ram == True:
             self.spectra_in_ram = True
@@ -416,7 +418,7 @@ class peakTreeBuffer():
             self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
             self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            self.doppler_spectrum_v = self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+            self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
 
