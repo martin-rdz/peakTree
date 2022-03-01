@@ -40,6 +40,15 @@ The polarimetric properties are calculated as a peak average (with filtering of 
 STSR mode
 ----------
 
+A radar in STSR mode configuration receives the signal only in the V and H channel. The co- and cross channel signal have to be calculated [Myagkov_et_al_2016]_.
+In the files provided for the RPG FMCW this is actually done for the co-channel, while the H spectrum is given as it is.
+
+- (re-)calculate the V spec
+- calculate spectral rhv
+- calculate the LDR 
+
+
+
 With the STSR configuration, the LDR cannot be observed directly, but has to be calculated from the correlation coefficient.
 Following the assumption of isotropic scatterers [Galletti_Zrnic_2012]_ and reflection symmetry [Galletti_et_al_2011]_, as done in `rpgpy`_ ``calc_spectral_LDR()``:
 
@@ -51,5 +60,8 @@ Following the assumption of isotropic scatterers [Galletti_Zrnic_2012]_ and refl
 .. [Galletti_et_al_2011] Galletti, M., Zrnic, D.S., Melnikov, V.M., Doviak, R.J., 2011. Degree of polarization: theory and applications for weather radar at LDR mode, in: 2011 IEEE RadarCon (RADAR). Presented at the 2011 IEEE Radar Conference (RadarCon), IEEE, Kansas City, MO, USA, pp. 039–044. https://doi.org/10.1109/RADAR.2011.5960495
 
 .. [Galletti_Zrnic_2012] Galletti, M., Zrnic, D.S., 2012. Degree of Polarization at Simultaneous Transmit: Theoretical Aspects. IEEE Geosci. Remote Sensing Lett. 9, 383–387. https://doi.org/10.1109/LGRS.2011.2170150
+
+.. [Myagkov_et_al_2016] Myagkov, A., Seifert, P., Bauer-Pfundstein, M., and Wandinger, U., 2016. Cloud radar with hybrid mode towards estimation of shape and orientation of ice crystals, Atmos. Meas. Tech., 9, 469–489, https://doi.org/10.5194/amt-9-469-2016
+
 
 .. _rpgpy: https://github.com/actris-cloudnet/rpgpy/blob/master/rpgpy/spcutil.py

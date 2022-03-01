@@ -190,6 +190,27 @@ def get_averaging_boundaries(array, slice_length, zero_index=0):
     return zero_index + is_left, zero_index + is_right
 
 
+def _roll_velocity(vel, vel_step, roll_vel, list_of_vars):
+    """roll the spectrum, i.e., glue the rightmost x m/s to the left """
+    #print('bin_roll_velocity ', roll_vel/vel_step)
+    bin_roll_velocity = (roll_vel/vel_step).astype(int)
+    velocity = np.concatenate((
+        np.linspace(vel[0] - bin_roll_velocity * vel_step, 
+                    vel[0] - vel_step, 
+                    num=bin_roll_velocity), 
+                    vel[:-bin_roll_velocity]))
+
+    out_vars = []
+    for var in list_of_vars:
+        out_vars.append(
+            np.concatenate((var[-bin_roll_velocity:], 
+                            var[:-bin_roll_velocity]))
+        )
+    #specZ = np.concatenate((specZ[-bin_roll_velocity:], 
+    #                        specZ[:-bin_roll_velocity]))
+    #also specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask
+    return velocity, out_vars
+
 class peakTreeBuffer():
     """trees for a time-height chunk
 
@@ -230,6 +251,7 @@ class peakTreeBuffer():
         self.peak_finding_params = config[system]['settings']['peak_finding_params']
         
         self.git_hash = get_git_hash()
+        self.inputinfo = {}
 
         self.preload_grid = False
 
@@ -243,6 +265,8 @@ class peakTreeBuffer():
             self.load_newkazr_file(filename, load_to_ram=load_to_ram)
         elif self.loader == 'kazr_legacy':
             self.load_kazr_file(filename, load_to_ram=load_to_ram)
+        elif self.loader == 'rpg':
+            self.load_rpgbinary_spec(filename, load_to_ram=load_to_ram)
         elif self.loader == 'rpgpy':
             self.load_rpgpy_spec(filename, load_to_ram=load_to_ram)
         else:
@@ -365,6 +389,74 @@ class peakTreeBuffer():
             self.indices = self.f.variables['spectrum_index'][:]
             self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
 
+    def load_rpgbinary_spec(self, filename, load_to_ram=False):
+        """load the rpg binary (.LV0) file directly; requires rpgpy
+
+        developed with rpgpy version 0.10.2
+        """
+        from rpgpy import read_rpg, version
+
+        self.type = 'rpgpy'
+        header, data = read_rpg(filename)
+        print('loaded file ', filename, ' with rpgpy ', version.__version__)
+
+        self.inputinfo = {
+            'rpgpy': version.__version__, 'sw': header['SWVersion'],
+        }
+        print('Header: ', header.keys())
+        print('Header: ', header['SWVersion'])
+        print('Data:   ', data.keys())
+
+        offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
+        self.timestamps = offset + data['Time'] + data['MSec']*1e-3
+        self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0 
+        self.range = header['RAlts']
+        self.velocity = header['velocity_vectors'].T
+        print('velocity shape', self.velocity.shape)
+
+        self.chirp_start_indices = header['RngOffs']
+        self.n_samples_in_chirp = header['SpecN'][:]
+        self.no_chirps = self.chirp_start_indices.shape[0]
+        print('chirp_start_indices', self.chirp_start_indices)
+        bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
+        print('range bins per chirp', bins_per_chirp, bins_per_chirp.shape)
+        self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp) 
+        self.begin_dt = h.ts_to_dt(self.timestamps[0])
+
+        scaling = self.settings['tot_spec_scaling']
+        log.warning(f"WARNING: Taking scaling factor from config file. It should be 1 for RPG software version > 5.40, "
+                    f"and 0.5 for earlier software versions (around 2020). Only applicable for STSR radar. Configured "
+                    f"are {scaling}")
+
+        if load_to_ram == True:
+            self.spectra_in_ram = True
+            #print(type(data['TotSpec']), data['TotSpec'])
+            self.doppler_spectrum = data['TotSpec']
+            spec_mask = self.doppler_spectrum == 0.0
+            self.doppler_spectrum_h = data['HSpec']
+            spec_h_mask = self.doppler_spectrum_h == 0.0
+            self.covariance_spectrum_re = data['ReVHSpec']
+            cov_re_mask = self.covariance_spectrum_re == 0.0
+            self.covariance_spectrum_im = data['ImVHSpec']
+            cov_im_mask = self.covariance_spectrum_im == 0.0
+            self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
+
+            self.doppler_spectrum = scaling*self.doppler_spectrum
+
+            self.integrated_noise = data['TotNoisePow']
+            self.integrated_noise_h = data['HNoisePow']
+
+            self.doppler_spectrum_v = 2 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+            noise_v = self.integrated_noise / 2.
+
+            print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
+            self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
+            print(self.noise_h_per_bin.shape)
+            #self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+            self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
+            #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+
+
 
     def load_rpgpy_spec(self, filename, load_to_ram=False):
         """ WIP implementation of the rpgpy spectra format
@@ -409,18 +501,23 @@ class peakTreeBuffer():
 
         if load_to_ram == True:
             self.spectra_in_ram = True
-            self.doppler_spectrum, spec_mask = h.masked_to_plain(scaling*self.f.variables['doppler_spectrum'][:])
+            self.doppler_spectrum, spec_mask = h.masked_to_plain(self.f.variables['doppler_spectrum'][:])
             self.doppler_spectrum_h, spec_h_mask = h.masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
             self.covariance_spectrum_re, cov_re_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
             self.covariance_spectrum_im, cov_im_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
             self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
+
+            self.doppler_spectrum = scaling*self.doppler_spectrum
+            self.doppler_spectrum[self.spectral_mask] = 0
+            self.doppler_spectrum_h[self.spectral_mask] = 0
+            self.covariance_spectrum_re[self.spectral_mask] = np.nan
+            self.covariance_spectrum_im[self.spectral_mask] = np.nan
 
             self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
             self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
             self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
-
 
             print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
             self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
@@ -639,28 +736,14 @@ class peakTreeBuffer():
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
 
             velocity = self.velocity.copy()
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                velocity = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                                self.velocity[:-roll_velocity]))
-
-                specZ = np.concatenate((specZ[-roll_velocity:], 
-                                        specZ[:-roll_velocity]))
-                specLDR = np.concatenate((specLDR[-roll_velocity:], 
-                                          specLDR[:-roll_velocity]))
-                specZcx = np.concatenate((specZcx[-roll_velocity:], 
-                                          specZcx[:-roll_velocity]))
-                specZ_mask = np.concatenate((specZ_mask[-roll_velocity:], 
-                                             specZ_mask[:-roll_velocity]))
-                specZcx_mask = np.concatenate((specZcx_mask[-roll_velocity:], 
-                                               specZcx_mask[:-roll_velocity]))
-                specLDR_mask = np.concatenate((specLDR_mask[-roll_velocity:], 
-                                               specLDR_mask[:-roll_velocity]))
+            if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
+                if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
+                    roll_velocity = peak_finding_params['roll_velocity']
+                print('>> !!! roll velocity active', roll_velocity)
+                upck = _roll_velocity(self.velocity, roll_velocity, 
+                                      [specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask])
+                self.velocity = upck[0]
+                specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask = upck[1]
 
             vel_step = (self.velocity[1]-self.velocity[0])
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
@@ -1130,8 +1213,11 @@ class peakTreeBuffer():
             #rhv = np.average(rhv_chunk, axis=(0,1))
             noise_h = np.average(noise_h_bin, axis=(0,1))
             noise_v = np.average(noise_v_bin, axis=(0,1))
-
-            specRhv = np.average(rhv_chunk, axis=(0,1)).filled(np.nan)
+            
+            if isinstance(rhv_chunk, np.ma.MaskedArray):
+                specRhv = np.average(rhv_chunk, axis=(0,1)).filled(np.nan)
+            else:
+                specRhv = np.average(rhv_chunk, axis=(0,1))
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
             print('spec shapes', specZ.shape, specRhv.shape)
@@ -1159,16 +1245,21 @@ class peakTreeBuffer():
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
             print('current chirp [zero-based index]', ind_chirp)
-
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                raise ValueError('not implemented for limrad_peako as dealiasing is done by preprocesisng')
+            vel_chirp = self.velocity[:,ind_chirp]
+            vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
+            if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
+                if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
+                    roll_velocity = peak_finding_params['roll_velocity']
+                print('>> roll velocity active', roll_velocity)
+                upck = _roll_velocity(vel_chirp, vel_step, roll_velocity, 
+                                      [specZ, specZv, specRhv, mask])
+                vel_chirp = upck[0]
+                specZ, specZv, specRhv, mask = upck[1]
 
             # smooth_spectra step
             # TODO: figure out why teresa uses len(velbins) and not /delta_v
             assert 'span' in peak_finding_params, \
                 "span and smooth_polyorder have to be defined in config"
-            vel_chirp = self.velocity[:,ind_chirp]
-            vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
             print('span ', peak_finding_params['span'], ' window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
 
@@ -1226,7 +1317,7 @@ class peakTreeBuffer():
             assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
             spectrum = {
                 'ts': self.timestamps[it], 'range': self.range[ir], 
-                'vel': self.velocity[:,ind_chirp],
+                'vel': vel_chirp,
                 'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres,
                 'specZ_mask': specZ_mask,
@@ -1470,6 +1561,7 @@ class peakTreeBuffer():
             dataset.contact = meta_info["contact"]
             dataset.creation_time = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
             dataset.settings = str(self.settings)
+            dataset.inputinfo = str(self.inputinfo)
             dataset.commit_id = self.git_hash[0]
             dataset.branch = self.git_hash[1]
             dataset.day = str(self.begin_dt.day)

@@ -7,11 +7,11 @@
     grid_time = 6
     max_no_nodes = 15
     LDR = true
-    #roll_velocity = 65 # for 512 bins = 7.92 m/s
-    roll_velocity = 98 # = 6.56 m/s
     station_altitude = 12
     #add_to_fname = '_rectwin'
 [Lacros_Lim.settings.peak_finding_params]
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 3.2 # now m/s (6.56 m/s)
     #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
     #vel_smooth = [0.33,0.33,0.33]
     thres_factor_co = 4.0 # false | factor in linear units
@@ -47,11 +47,11 @@
     max_no_nodes = 15
     polarimetry = 'LDR'
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
-    #roll_velocity = 65 # for 512 bins = 7.92 m/s
-    roll_velocity = 98 # = 6.56 m/s
     station_altitude = 9
     #add_to_fname = '_rectwin'
 [Lacros_Pun.settings.peak_finding_params]
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 3.2 # now m/s (6.56 m/s)
     # supress spurious peaks introduced by tails; back to 3 as the other tail filter should work better
     thres_factor_co = 2.5 # false | factor in linear units
     thres_factor_cx = 2.0 # false | factor in linear units
@@ -223,11 +223,12 @@
 [limrad_punta] 
     location = "Punta Arenas"
     shortname = "Pun"
-    loader = 'rpgpy'
+    #loader = 'rpgpy'
+    loader = 'rpg'
 [limrad_punta.settings] 
     grid_time = false
     max_no_nodes = 15 
-    tot_spec_scaling = 2
+    tot_spec_scaling = 1
     polarimetry = 'STSR' 
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
     decoupling = -30
