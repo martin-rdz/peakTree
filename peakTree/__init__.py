@@ -446,7 +446,7 @@ class peakTreeBuffer():
             self.integrated_noise = data['TotNoisePow']
             self.integrated_noise_h = data['HNoisePow']
 
-            self.doppler_spectrum_v = 2 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+            self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
             noise_v = self.integrated_noise / 2.
 
             print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
@@ -473,6 +473,9 @@ class peakTreeBuffer():
         #times = self.f.variables['decimal_time'][:]
         #seconds = times.astype(np.float)*3600.
         #self.timestamps = h.dt_to_ts(datetime.datetime(2014, 2, 21)) + seconds
+        self.inputinfo = {
+            'sw': self.f.variables['software_version'],
+        }
 
         # convention here is unix time rpgpy provides since beginning of 2001 with additional milliseconds
         time = self.f.variables['time'][:]
@@ -1172,7 +1175,6 @@ class peakTreeBuffer():
 
         elif self.type == 'rpgpy':
             
-            print('experimental rpgpy reader')
             # average_spectra step
             spec_chunk = self.doppler_spectrum[it_slicer,ir_slicer,:]
 
@@ -1198,7 +1200,7 @@ class peakTreeBuffer():
             #
             # actually we are calculating SLDR
             #specLDR_chunk = 10*np.log10((1-rhv_chunk)/(1+rhv_chunk))
-            specLDR_chunk = (1-rhv_chunk)/(1+rhv_chunk)
+            #specLDR_chunk = (1-rhv_chunk)/(1+rhv_chunk)
             # specZcx_chunk = spec_chunk*specLDR_chunk
             #no_averages = spec_chunk.shape[1]
             no_averages = np.prod(spec_chunk.shape[:-1])
@@ -1207,7 +1209,7 @@ class peakTreeBuffer():
             print('slicer', it_slicer, ir_slicer, 'shape', spec_chunk.shape)
             specZ = np.average(spec_chunk, axis=(0,1))
             specZv = np.average(spec_v_chunk, axis=(0,1))
-            #specZh = np.average(spec_h_chunk, axis=(0,1))
+            specZh = np.average(spec_h_chunk, axis=(0,1))
             #cov_re = np.average(cov_re_chunk, axis=(0,1))
             #cov_im = np.average(cov_im_chunk, axis=(0,1))
             #rhv = np.average(rhv_chunk, axis=(0,1))
@@ -1252,9 +1254,9 @@ class peakTreeBuffer():
                     roll_velocity = peak_finding_params['roll_velocity']
                 print('>> roll velocity active', roll_velocity)
                 upck = _roll_velocity(vel_chirp, vel_step, roll_velocity, 
-                                      [specZ, specZv, specRhv, mask])
+                                      [specZ, specZv, specZh, specRhv, mask])
                 vel_chirp = upck[0]
-                specZ, specZv, specRhv, mask = upck[1]
+                specZ, specZv, specZh, specRhv, mask = upck[1]
 
             # smooth_spectra step
             # TODO: figure out why teresa uses len(velbins) and not /delta_v
@@ -1295,24 +1297,36 @@ class peakTreeBuffer():
             # for the SLDR radar this is a rather hypothetical quantity
             #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
             specSNRv = specZv/noise_v
-            #print('SNRcx', h.lin2z(specSNRcx))
-            #print('SNRco', h.lin2z(specSNRco))
-            #print('SNRv', specSNRv)
-            #print('SNRco', specSNRco)
             #print('LDR masks', (specSNRv < 300) , (specSNRco < 300) , (specZ_mask))
-            #specRhv_mask = ((specSNRv < 200) | (specSNRco < 200) | specZ_mask)
-            specRhv_mask = ((specSNRv < 100) | (specSNRco < 100) | specZ_mask)
 
             specRhvmasked = specRhv.copy()
-            # use 0 as mask instead of np.nan
-            specRhvmasked[specRhv_mask] = np.nan
-            specLDRmasked = (1-specRhvmasked)/(1+specRhvmasked)
-            specLDRmasked[specRhv_mask] = np.nan
-            #
             # the Galetti formula does not like rhos larger 1.0 (those give LDRs < 0)
-            specLDRmasked[specRhv >= 1.0] = np.nan
-            specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
+            #specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
             # required for subpeak LDR calculation
+            specRhv_mask = ((specRhv >= 1.0) | specZ_mask)
+
+            # using the myagkov formula and (traditional) masking
+            specZcx = (specZ + specZv)*(1-specRhv)
+            specZco = (specZ + specZv)*(1+specRhv)
+
+            specZcx_masked = specZcx.copy()
+            if ('thres_factor_cx' in peak_finding_params 
+                and peak_finding_params['thres_factor_cx']):
+                noise_cx_thres = noise_h * peak_finding_params['thres_factor_cx']
+            else:
+                noise_cx_thres = noise_h
+            specZcx_mask = (specRhv_mask | (specZcx < noise_cx_thres))
+            specZcx_masked[specZcx_mask] = 0
+            print(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
+            specZco_masked = specZco.copy()
+            specZco_masked[specZcx_mask] = 0
+
+            specLDR = specZcx/specZco
+            specLDRmasked = specLDR.copy()
+            specLDRmasked[specZcx_mask] = 0
+
+            #print('specZ', h.lin2z(specLDRmasked))
+            #print('specZh', h.lin2z((specZh + specZv)*(1-specRhv)/(specZh + specZv)*(1+specRhv)))
 
             assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
             spectrum = {
@@ -1328,8 +1342,12 @@ class peakTreeBuffer():
                 'specRhvmasked': specRhvmasked,
                 'no_temp_avg': no_averages,
                 'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
-                'specLDRmasked': specLDRmasked,
                 'specSNRv': specSNRv, 
+
+                'specZcx': specZcx, 'specZcx_validcx': specZcx_masked,
+                'specZ_validcx': specZco_masked,
+                'specZcx_mask': specZcx_mask,
+                'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
                 #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
                 #'noise_h': noise_h, 'noise_v': noise_v,
                 'decoupling': self.settings['decoupling'],

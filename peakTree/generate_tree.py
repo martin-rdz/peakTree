@@ -774,7 +774,9 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
             if spectrum['polarimetry'] == 'LDR':
                 moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             elif spectrum['polarimetry'] == 'STSR':
-                moments, _ = calc_moments_STSR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+                moments, _ = calc_moments(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
+                # with the new SLDR method one could revert to the LDR moment calc
+                #moments, _ = calc_moments_STSR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
             elif spectrum['polarimetry'] == 'false':
                 moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
 

@@ -186,19 +186,21 @@
 [limrad_peako] 
     location = "Leipzig"
     shortname = "Lei"
-    loader = 'rpgpy'
+    #loader = 'rpgpy'
+    loader = 'rpg'
 [limrad_peako.settings] 
     grid_time = false
     max_no_nodes = 15 
     #LDR = true 
     polarimetry = 'STSR' 
-    tot_spec_scaling = 4
+    tot_spec_scaling = 1
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
     decoupling = -30
     station_altitude = 100
 # chirps in zero-based indexing
 [limrad_peako.settings.peak_finding_params.chirp0]
     # new: seconds instead of index
+    thres_factor_co = false # false | factor in linear units
     t_avg = 0            # s
     h_avg = 89          # m
     span = 0.2          # m s-1
@@ -228,25 +230,26 @@
 [limrad_punta.settings] 
     grid_time = false
     max_no_nodes = 15 
-    tot_spec_scaling = 1
+    tot_spec_scaling = 0.5
     polarimetry = 'STSR' 
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
-    decoupling = -30
+    decoupling = -29
     station_altitude = 22
 [limrad_punta.settings.peak_finding_params.chirp0]
     thres_factor_co = false # false | factor in linear units
     # new: seconds instead of index
     t_avg = 0            # s
     h_avg = 89          # m
-    span = 0.2          # m s-1
+    span = 0.25          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_punta.settings.peak_finding_params.chirp1]
+    roll_velocity = 2     # m/s from the right of the spec
     thres_factor_co = false # false | factor in linear units
     t_avg = 9           # s
     h_avg = 0            # m
-    span = 0.05           # m s-1
+    span = 0.25           # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
