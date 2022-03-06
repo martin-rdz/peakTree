@@ -20,12 +20,12 @@ pTB = peakTree.peakTreeBuffer(system='joyrad_nya')
 #pTB.load_joyrad_file('data/joyrad94_nya_20191108000001_P01_ZEN.nc', load_to_ram=True) 
 #TB.load_joyrad_file('data/joyrad94_nya_20191108120000_P01_ZEN.nc', load_to_ram=True)
 
-# older files
-pTB.load_joyrad_file('data/joyrad94_nya_20170602100002_P05_ZEN.nc', load_to_ram=True)
-#pTB.load_joyrad_file('data/joyrad94_nya_20170602110001_P05_ZEN.nc', load_to_ram=True)
-pTB.assemble_time_height('output/') 
-exit()
+## older files
+#pTB.load_joyrad_file('data/joyrad94_nya_20170602100002_P05_ZEN.nc', load_to_ram=True)
+##pTB.load_joyrad_file('data/joyrad94_nya_20170602110001_P05_ZEN.nc', load_to_ram=True)
+#pTB.assemble_time_height('output/')
+#exit()
 
 
-pTB.load_joyrad_file('data/joyrad94_nya_20191108000001_P01_ZEN.nc', load_to_ram=True) 
-pTB.assemble_time_height('output/') 
+pTB.load('data/joyrad94_20200401180001_P01_ZEN.lv0', load_to_ram=True)
+pTB.assemble_time_height('output/')

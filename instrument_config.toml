@@ -170,18 +170,53 @@
 
 [joyrad_nya] 
     location = "Ny-Alesund" 
-    shortname = "joyrad_nya" 
-[joyrad_nya.settings] 
-    #smooth = true 
-    smooth = 'broad' 
-    #grid_time = 4 
-    max_no_nodes = 15 
-    # for joyrad test linear factor
-    #thres_factor_cx = 3.0 
-    thres_factor_co = 1.5 # false | factor in linear units
-    LDR = false 
+    shortname = "joyrad_nya"
+    loader = 'rpg'
+[joyrad_nya.settings]
+    grid_time = false
+    tot_spec_scaling = 0.5 # software version = 5.25
+    polarimetry = 'false'
+    smooth_cut_sequence = 'sc'
+    decoupling = -30
+    roll_velocity = 2 # now m/s (2 m/s)
+    max_no_nodes = 15
     station_altitude = 10
-
+[joyrad_nya.settings.peak_finding_params.chirp0]
+    thres_factor_co = 6.0 # false | factor in linear units
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 0          # m
+    span = 0.15          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 2.0     # dB
+    width_thres = 0      # m s-1
+[joyrad_nya.settings.peak_finding_params.chirp1]
+    thres_factor_co = 6.0 # false | factor in linear units
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 0          # m
+    span = 0.15          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 2.0     # dB
+    width_thres = 0      # m s-1[limrad_punta.settings.peak_finding_params.chirp1]
+[joyrad_nya.settings.peak_finding_params.chirp2]
+    thres_factor_co = 6.0 # false | factor in linear units
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 0          # m
+    span = 0.15          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 2.0     # dB
+    width_thres = 0      # m s-1
+[joyrad_nya.settings.peak_finding_params.chirp3]
+    thres_factor_co = 6.0 # false | factor in linear units
+    # new: seconds instead of index
+    t_avg = 0            # s
+    h_avg = 0          # m
+    span = 0.15          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 2.0     # dB
+    width_thres = 0      # m s-1
 
 [limrad_peako] 
     location = "Leipzig"
@@ -208,13 +243,16 @@
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_peako.settings.peak_finding_params.chirp1]
+    roll_velocity = 2     # m/s from the right of the spec
+    thres_factor_co = false # false | factor in linear units
     t_avg = 9           # s
     h_avg = 0            # m
-    span = 0.05           # m s-1
+    span = 0.25           # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_peako.settings.peak_finding_params.chirp2]
+    thres_factor_co = false # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m
     span = 0.2           # m s-1

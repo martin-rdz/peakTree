@@ -150,3 +150,20 @@ def estimate_noise(spec, mov_avg=1):
             'noise_sep': noise_sep,
             'noise_var': np.var(noise_part), 
             'no_noise_bins': i_noise}
+
+
+def estimate_noise_array(spectra_array):
+    """
+    Wrapper for estimate_noise, to apply to a chunk of Doppler spectra
+    Args:
+         spectra_array (ndarray): 3D array of Doppler spectra
+    Returns:
+         mean noise for each time-height
+    """
+    print('estimating noise...')
+    out = np.zeros(spectra_array.shape[:2])-999.0
+    for ts in range(spectra_array.shape[0]):
+        for rg in range(spectra_array.shape[1]):
+            out[ts, rg] = estimate_noise(spectra_array[ts, rg, :])['noise_mean']
+
+    return out
