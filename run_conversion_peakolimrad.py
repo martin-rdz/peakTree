@@ -17,7 +17,6 @@ log.setLevel(logging.DEBUG)
 log.addHandler(logging.StreamHandler())
 
 #pTB = peakTree.peakTreeBuffer(system='limrad_peako')
-pTB = peakTree.peakTreeBuffer(system='limrad_punta')
 
 # IDEA: for now run with temporal_average = False
 # t_avg: number of neighbors in time dimension (both sides)
@@ -34,9 +33,13 @@ pTB = peakTree.peakTreeBuffer(system='limrad_punta')
 #pTB.load('data/190911_030001_P05_ZEN.LV0.rpgpy.NC', load_to_ram=True)
 
 # with the binary reader
-#pTB.load('data/190911_030001_P05_ZEN.LV0', load_to_ram=True)
-#pTB.load('data/190313_080000_P05_ZEN.LV0', load_to_ram=True)
-#pTB.assemble_time_height('output/', fname_system=True)
+pTB = peakTree.peakTreeBuffer(system='limrad_punta')
+pTB.load('data/190911_030001_P05_ZEN.LV0', load_to_ram=True)
+pTB.assemble_time_height('output/', fname_system=True)
+
+pTB = peakTree.peakTreeBuffer(system='limrad_punta')
+pTB.load('data/190313_080000_P05_ZEN.LV0', load_to_ram=True)
+pTB.assemble_time_height('output/', fname_system=True)
 
 pTB = peakTree.peakTreeBuffer(system='limrad_peako')
 pTB.load('data/210319_140002_P05_ZEN.LV0', load_to_ram=True)

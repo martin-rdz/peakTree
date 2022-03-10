@@ -450,6 +450,7 @@ class peakTreeBuffer():
                 # possibly missing scaling factor here:
                 self.integrated_noise = data['TotNoisePow'] + data['HNoisePow'] if 'TotNoisePow' in data else \
                 h.estimate_noise_array(self.doppler_spectrum)
+                self.integ_noise_per_bin = (self.integrated_noise/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
                 self.doppler_spectrum_h = data['HSpec']
                 spec_h_mask = self.doppler_spectrum_h == 0.0
                 self.covariance_spectrum_re = data['ReVHSpec']
@@ -1262,7 +1263,7 @@ class peakTreeBuffer():
             # TV: noise_v should be more suitable
             # --> update: noise_v actually contains vertical channel noise, better use sum of both channels...?
             #noise_mean = noise_v
-            noise_mean = np.average(self.integrated_noise[it_slicer, ir_slicer], axis=(0, 1))
+            noise_mean = np.average(self.integ_noise_per_bin[it_slicer, ir_slicer], axis=(0, 1))
             #noise_thres = np.min(specZ[np.isfinite(specZ)])*3
             #noise_thres = noise_h*3
             if ('thres_factor_co' in peak_finding_params
@@ -1283,8 +1284,10 @@ class peakTreeBuffer():
                 print('>> roll velocity active', roll_velocity)
                 if self.settings['polarimetry'] == 'STSR':
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
-                                      [specZ, specZv, specRhv, mask])
-                    specZ, specZv, specRhv, mask = upck[1]
+                                      #[specZ, specZv, specRhv, mask])
+                                      [specZ, specZh, specZv, specRhv, mask])
+                    #specZ, specZv, specRhv, mask = upck[1]
+                    specZ, specZh, specZv, specRhv, mask = upck[1]
                 elif self.settings['polarimetry'] == 'false':
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
                                           [specZ, mask])
@@ -1323,10 +1326,8 @@ class peakTreeBuffer():
             if self.settings['polarimetry'] == 'STSR':
                 specSNRco = specZ/noise_h
                 specSNRco_mask = specZ_mask.copy()
-                print("noise_h {:5.3f}  noise_v {:5.3f}".format(
-                #    h.lin2z(noise_h[0]), h.lin2z(noise_v[0])))
-                    h.lin2z(noise_h), h.lin2z(noise_v)))
-
+                print(f"noise_h {h.lin2z(noise_h):5.3f}  noise_v {h.lin2z(noise_v):5.3f} \
+noise_mean {h.lin2z(noise_mean):5.3f}")
 
                 # for the SLDR radar this is a rather hypothetical quantity
                 #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
@@ -1347,15 +1348,16 @@ class peakTreeBuffer():
                 specRhvmasked[specRhv_mask] = np.nan
 
                 # using the myagkov formula and (traditional) masking
-                specZcx = (specZ + specZv)*(1-specRhv)
-                specZco = (specZ + specZv)*(1+specRhv)
+                specZcx = (specZh + specZv)*(1-specRhv)
+                specZco = (specZh + specZv)*(1+specRhv)
+                #print('Zh - Z', h.lin2z(specZh)-h.lin2z(specZ))
 
                 specZcx_masked = specZcx.copy()
                 if ('thres_factor_cx' in peak_finding_params 
                     and peak_finding_params['thres_factor_cx']):
-                    noise_cx_thres = noise_h * peak_finding_params['thres_factor_cx']
+                    noise_cx_thres = noise_mean * peak_finding_params['thres_factor_cx']
                 else:
-                    noise_cx_thres = noise_h
+                    noise_cx_thres = noise_mean
                 specZcx_mask = (specRhv_mask | (specZcx < noise_cx_thres))
                 specZcx_masked[specZcx_mask] = 0
                 print(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
@@ -1385,8 +1387,8 @@ class peakTreeBuffer():
                     'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
                     'specSNRv': specSNRv, 
 
-                    'specZcx': specZcx, 'specZcx_validcx': specZcx_masked,
-                    'specZ_validcx': specZco_masked,
+                    'specZcx': specZcx, 'noise_cx_thres': noise_cx_thres, 
+                    'specZcx_validcx': specZcx_masked, 'specZ_validcx': specZco_masked,
                     'specZcx_mask': specZcx_mask,
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
                     #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
