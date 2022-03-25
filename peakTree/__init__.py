@@ -443,14 +443,10 @@ class peakTreeBuffer():
             #  all stored in the files (no matter which polarimetric type of RPG radar) and needs to be computed here.
             #  TBD: Do we need to also apply the scaling factor to the noise?
 
-            self.integrated_noise = data['TotNoisePow'] if 'TotNoisePow' in data else \
-                h.estimate_noise_array(self.doppler_spectrum)
-
             if self.settings['polarimetry'] == 'STSR':
                 # possibly missing scaling factor here:
                 self.integrated_noise = data['TotNoisePow'] + data['HNoisePow'] if 'TotNoisePow' in data else \
-                h.estimate_noise_array(self.doppler_spectrum)
-                self.integ_noise_per_bin = (self.integrated_noise/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
+                h.estimate_noise_array(self.doppler_spectrum)*np.repeat(self.n_samples_in_chirp, bins_per_chirp)
                 self.doppler_spectrum_h = data['HSpec']
                 spec_h_mask = self.doppler_spectrum_h == 0.0
                 self.covariance_spectrum_re = data['ReVHSpec']
@@ -469,10 +465,11 @@ class peakTreeBuffer():
 
             elif self.settings['polarimetry'] == 'false':
                 self.integrated_noise = data['TotNoisePow'] if 'TotNoisePow' in data else \
-                h.estimate_noise_array(self.doppler_spectrum)
+                h.estimate_noise_array(self.doppler_spectrum)*np.repeat(self.n_samples_in_chirp, bins_per_chirp)
                 self.spectral_mask = spec_mask
                 # here another option for polarimetry = 'LDR' needs to be added
 
+            self.integ_noise_per_bin = (self.integrated_noise/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
             #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
 
 
@@ -1216,7 +1213,7 @@ class peakTreeBuffer():
                 print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
                 print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
 
-                #specZh = np.average(spec_h_chunk, axis=(0,1))
+                specZh = np.average(spec_h_chunk, axis=(0,1))
                 #cov_re = np.average(cov_re_chunk, axis=(0,1))
                 #cov_im = np.average(cov_im_chunk, axis=(0,1))
                 #rhv = np.average(rhv_chunk, axis=(0,1))
@@ -1233,29 +1230,11 @@ class peakTreeBuffer():
                 assert not isinstance(specZv, np.ma.core.MaskedArray), "Zv not np.ndarray"
                 assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
 
-            print('slicer', it_slicer, ir_slicer, 'shape', spec_chunk.shape)
-            specZ = np.average(spec_chunk, axis=(0,1))
-            specZv = np.average(spec_v_chunk, axis=(0,1))
-            specZh = np.average(spec_h_chunk, axis=(0,1))
-            #cov_re = np.average(cov_re_chunk, axis=(0,1))
-            #cov_im = np.average(cov_im_chunk, axis=(0,1))
-            #rhv = np.average(rhv_chunk, axis=(0,1))
-            noise_h = np.average(noise_h_bin, axis=(0,1))
-            noise_v = np.average(noise_v_bin, axis=(0,1))
-            
-            if isinstance(rhv_chunk, np.ma.MaskedArray):
-                specRhv = np.average(rhv_chunk, axis=(0,1)).filled(np.nan)
-            else:
-                specRhv = np.average(rhv_chunk, axis=(0,1))
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
-            print('spec shapes', specZ.shape, specRhv.shape)
             #print('spec_ldr', 10*np.log10(specLDR))
 
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
-            assert not isinstance(specZv, np.ma.core.MaskedArray), "Zv not np.ndarray"
-            assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
-
             if np.all(np.isnan(specZ)):
                 print('empty spectrum', ir, it)
                 return {}, {}
