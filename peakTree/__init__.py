@@ -398,28 +398,27 @@ class peakTreeBuffer():
 
         self.type = 'rpgpy'
         header, data = read_rpg(filename)
-        print('loaded file ', filename, ' with rpgpy ', version.__version__)
+        log.info(f'loaded file {filename} with rpgpy {version.__version__}')
 
         self.inputinfo = {
             'rpgpy': version.__version__, 'sw': header['SWVersion'],
         }
-        print('Header: ', header.keys())
-        print('Header: ', header['SWVersion'])
-        print('Data:   ', data.keys())
+        log.debug(f'Header: {header.keys()}')
+        log.debug(f'Data  : {data.keys()}')
 
         offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
         self.timestamps = offset + data['Time'] + data['MSec']*1e-3
         self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
         self.range = header['RAlts']
         self.velocity = header['velocity_vectors'].T
-        print('velocity shape', self.velocity.shape)
+        log.debug(f'velocity shape {self.velocity.shape}')
 
         self.chirp_start_indices = header['RngOffs']
         self.n_samples_in_chirp = header['SpecN'][:]
         self.no_chirps = self.chirp_start_indices.shape[0]
-        print('chirp_start_indices', self.chirp_start_indices)
+        log.debug(f'chirp_start_indices {self.chirp_start_indices}')
         bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
-        print('range bins per chirp', bins_per_chirp, bins_per_chirp.shape)
+        log.debug('range bins per chirp {bins_per_chirp} {bins_per_chirp.shape}')
         self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp)
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
@@ -458,9 +457,9 @@ class peakTreeBuffer():
                 self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
                 noise_v = data['TotNoisePow']  # * scaling ?
 
-                print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
+                #print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
                 self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                print(self.noise_h_per_bin.shape)
+                #print(self.noise_h_per_bin.shape)
                 self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
 
             elif self.settings['polarimetry'] == 'false':
@@ -481,6 +480,7 @@ class peakTreeBuffer():
         """
 
         #TODO include the polarization state (variable dual_polarization in rpgpy netcdf)
+        log.warning(f"WARNING: not actively maintained use binary version instead (loader='rpg')")
 
         self.type = 'rpgpy'
         self.f = netCDF4.Dataset(filename, 'r')
@@ -670,7 +670,7 @@ class peakTreeBuffer():
             it = time_index(self.timestamps, sel_ts)
             ir = np.where(self.range == min(self.range, key=lambda t: abs(sel_range - t)))[0][0]
         #it_b, it_e = it, min(it+1, self.timestamps.shape[0]-1)
-        log.info('time {} {} {} height {} {}'.format(it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], ir, self.range[ir])) if not silent else None
+        log.info('time {} {} {} height {} {}'.format(it, h.ts_to_dt(self.timestamps[it]), self.timestamps[it], ir, self.range[ir]))
         assert np.abs(sel_ts - self.timestamps[it]) < self.delta_ts, 'timestamps more than '+str(self.delta_ts)+'s apart'
         #assert np.abs(sel_range - self.range[ir]) < 10, 'ranges more than 10m apart'
 
@@ -682,7 +682,7 @@ class peakTreeBuffer():
             ir_min, ir_max = np.where(self.range_chirp_mapping == ind_chirp)[0][np.array([0, -1])]
             #print('ir_min, ir_max', ir_min, ir_max)
         peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
-        print('using peak_finding_params', peak_finding_params)
+        log.debug(f'using peak_finding_params {peak_finding_params}')
         ir_b, ir_e = self.get_ir_interval(ir) 
         ir_slicer = slice(max(ir_b, ir_min), min(ir_e, ir_max))
 
@@ -693,12 +693,12 @@ class peakTreeBuffer():
         it_slicer = slice(it_b, it_e)
         # be extremely careful with slicer and _e or _e+1
         slicer_sel_ts = self.timestamps[it_slicer]
-        log.debug('timerange {} {} {} '.format(str(it_slicer), h.ts_to_dt(slicer_sel_ts[0]), h.ts_to_dt(slicer_sel_ts[-1]))) if not silent else None
+        log.debug('timerange {} {} {} '.format(str(it_slicer), h.ts_to_dt(slicer_sel_ts[0]), h.ts_to_dt(slicer_sel_ts[-1]))) 
         assert slicer_sel_ts[-1] - slicer_sel_ts[0] < 20, 'found averaging range too large'
 
-        print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer, 
-              '      it ', it_b, it, it_e, slicer_sel_ts.tolist())
-        print(self.range[max(ir_b, ir_min)], self.range[ir], self.range[min(ir_e, ir_max)])
+        #print('ir selected', ir_min, ir_b, ir, ir_e, ir_max, ir_slicer, 
+        #      '      it ', it_b, it, it_e, slicer_sel_ts.tolist())
+        #print(self.range[max(ir_b, ir_min)], self.range[ir], self.range[min(ir_e, ir_max)])
 
         if self.type == 'spec':
             decoupling = self.settings['decoupling']
@@ -758,7 +758,7 @@ class peakTreeBuffer():
             if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
-                print('>> !!! roll velocity active', roll_velocity)
+                log.info(f'>> roll velocity active {roll_velocity}')
                 upck = _roll_velocity(self.velocity, roll_velocity, 
                                       [specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask])
                 self.velocity = upck[0]
@@ -1194,8 +1194,7 @@ class peakTreeBuffer():
             no_averages = np.prod(spec_chunk.shape[:-1])
             specZ = np.average(spec_chunk, axis=(0,1))
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
-            print('no_averages', spec_chunk.shape[:-1], np.prod(spec_chunk.shape[:-1]))
-            print('slicer', it_slicer, ir_slicer, 'shape', spec_chunk.shape)
+            log.debug(f'no_averages {spec_chunk.shape[:-1]} {np.prod(spec_chunk.shape[:-1])}')
 
             # some parallel processing for debugging
             if self.settings['polarimetry'] == 'STSR':
@@ -1210,9 +1209,10 @@ class peakTreeBuffer():
 
                 rhv_chunk = np.abs(cov_re_chunk + 1j * cov_im_chunk) / np.sqrt(
                     (spec_v_chunk + noise_v_bin[:,:,np.newaxis]) * (spec_h_chunk + noise_h_bin[:,:,np.newaxis]))
-                print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
-                print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
+                #print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
+                #print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
 
+                specZv = np.average(spec_v_chunk, axis=(0,1))
                 specZh = np.average(spec_h_chunk, axis=(0,1))
                 #cov_re = np.average(cov_re_chunk, axis=(0,1))
                 #cov_im = np.average(cov_im_chunk, axis=(0,1))
@@ -1226,12 +1226,13 @@ class peakTreeBuffer():
                     specRhv = np.average(rhv_chunk, axis=(0,1))
                 #specLDR = np.average(specLDR_chunk, axis=(0,1))
                 #print('spec_ldr', 10*np.log10(specLDR))
-                print('spec shapes', specZ.shape, specRhv.shape)
                 assert not isinstance(specZv, np.ma.core.MaskedArray), "Zv not np.ndarray"
                 assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
 
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
+            log.debug(f'slicer {it_slicer} {ir_slicer} shape {spec_chunk.shape}')
+            log.debug(f'spec shapes {specZ.shape} {specRhv.shape}')
             #print('spec_ldr', 10*np.log10(specLDR))
 
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
@@ -1254,13 +1255,13 @@ class peakTreeBuffer():
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
-            print('current chirp [zero-based index]', ind_chirp)
+            log.debug(f'current chirp [zero-based index] {ind_chirp}')
             vel_chirp = self.velocity[:, ind_chirp]
             vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
-                print('>> roll velocity active', roll_velocity)
+                log.info(f'>> roll velocity active {roll_velocity}')
                 if self.settings['polarimetry'] == 'STSR':
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
                                       #[specZ, specZv, specRhv, mask])
@@ -1278,7 +1279,7 @@ class peakTreeBuffer():
             assert 'span' in peak_finding_params, \
                 "span and smooth_polyorder have to be defined in config"
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
-            print('span ', peak_finding_params['span'], ' window_length ', window_length, ' polyorder ', peak_finding_params['smooth_polyorder'])
+            log.info(f"span {peak_finding_params['span']} window_length {window_length} polyorder {peak_finding_params['smooth_polyorder']}")
 
             specZ_raw = specZ.copy()
 
@@ -1305,7 +1306,7 @@ class peakTreeBuffer():
             if self.settings['polarimetry'] == 'STSR':
                 specSNRco = specZ/noise_h
                 specSNRco_mask = specZ_mask.copy()
-                print(f"noise_h {h.lin2z(noise_h):5.3f}  noise_v {h.lin2z(noise_v):5.3f} \
+                log.info(f"noise_h {h.lin2z(noise_h):5.3f}  noise_v {h.lin2z(noise_v):5.3f} \
 noise_mean {h.lin2z(noise_mean):5.3f}")
 
                 # for the SLDR radar this is a rather hypothetical quantity
@@ -1339,7 +1340,7 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                     noise_cx_thres = noise_mean
                 specZcx_mask = (specRhv_mask | (specZcx < noise_cx_thres))
                 specZcx_masked[specZcx_mask] = 0
-                print(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
+                log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
                 specZco_masked = specZco.copy()
                 specZco_masked[specZcx_mask] = 0
 

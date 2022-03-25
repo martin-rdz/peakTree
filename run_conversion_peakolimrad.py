@@ -13,8 +13,8 @@ import peakTree.helpers as h
 
 import logging
 log = logging.getLogger('peakTree')
-log.setLevel(logging.DEBUG)
-log.addHandler(logging.StreamHandler())
+log.setLevel(logging.INFO)
+#log.addHandler(logging.StreamHandler())
 
 #pTB = peakTree.peakTreeBuffer(system='limrad_peako')
 

@@ -504,7 +504,7 @@ def tree_from_spectrum(spectrum, peak_finding_params):
     #         print(i, spectrum['vel'][i], h.lin2z(spectrum['specZ'][i]))
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0)
     peak_ind = detect_peak_simple(masked_Z, spectrum['noise_thres'])
-    print(f"noise thres per peak {peak_ind} {h.lin2z(spectrum['noise_thres']):.3f}")
+    log.info(f"noise thres per peak {peak_ind} {h.lin2z(spectrum['noise_thres']):.3f}")
     # filter all peaks with that are only 1 bin wide
     peak_ind = list(filter(lambda e: e[1]-e[0] > 0, peak_ind))
     if peak_ind:
@@ -556,14 +556,14 @@ def tree_from_spectrum(spectrum, peak_finding_params):
             all_parents = [n['parent_id'] for n in traversed.values()]
             leafs = set(traversed.keys()) - set(all_parents)
             nodes_to_split = [k for k,v in traversed.items() if k in leafs and np.abs(v['skew']) > 0.4]
-            print('all_parents ', all_parents, 'leafs ', leafs, ' nodes to split ', nodes_to_split)
+            log.debug(f'all_parents {all_parents} leafs {leafs} nodes to split {nodes_to_split}')
             calc_chop = lambda x: int(0.85*(x[1]-x[0])+x[0])
             split_at = [calc_chop(traversed[k]['bounds']) for k in nodes_to_split]
-            print(split_at)
+            log.debug(split_at)
             for s in split_at:
                 print('add min', s, masked_Z[s])
                 t.add_min(s, masked_Z[s], ignore_prom=True)
-            print(t)
+            log.debug(t)
             traversed = coords_to_id(list(traverse(t, [0])))
 
             for i in traversed.keys():
@@ -571,7 +571,7 @@ def tree_from_spectrum(spectrum, peak_finding_params):
                 traversed[i].update(moments)
                 if i in nodes_with_min:
                     traversed[i]['chop'] = True
-            print(traversed)
+            log.debug(traversed)
 
     else:
         traversed = {}
@@ -590,7 +590,7 @@ def tree_from_peako(spectrum, noise_sep, internal):
         for m in internal:
             t.add_min(m, spectrum['specZ'][m], ignore_prom=True)
 
-        print(t)
+        log.debug(t)
         traversed = coords_to_id(list(traverse(t, [0])))
         for i in traversed.keys():
             moments, _ = calc_moments_wo_LDR(spectrum, traversed[i]['bounds'], traversed[i]['thres'])
@@ -600,7 +600,7 @@ def tree_from_peako(spectrum, noise_sep, internal):
             #     print(i, traversed[i])
             #     input()
 
-        print(print_tree.travtree2text(traversed))
+        log.debug(print_tree.travtree2text(traversed))
     else:
         traversed = {}
     return traversed
@@ -732,7 +732,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
         prominence=peak_finding_params['prom_thres'],
         width=width,
         rel_height=0.5)
-    print('find_peaks locs, props', locs, props)
+    log.debug(f'find_peaks locs {locs} props {props}')
     #noise_floor_edges = detect_peak_simple(masked_Z_pf, spectrum['noise_thres'])
     #print('noise_floor_edges', noise_floor_edges)
 
@@ -750,7 +750,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
     if not all([e[0]<e[1] for e in bounds]):
         bounds = []
     noise_sep, internal = h.divide_bounds(bounds)
-    print("sep internal {} => {} {}".format(bounds, noise_sep, internal))
+    log.info(f"sep internal {bounds} => {noise_sep} {internal}")
 
     # the internal peaks have to be sorted by their height
     # otherwise the tree will not be build correctly
@@ -766,7 +766,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
         for m in internal:
             t.add_min(m, spectrum['specZ'][m], ignore_prom=True)
 
-        print(t)
+        #print(t)
         traversed = coords_to_id(list(traverse(t, [0])))
         for i in traversed.keys():
             #print(i, traversed[i]['bounds'], h.lin2z(traversed[i]['thres']))
@@ -788,7 +788,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
             #     print(i, traversed[i])
             #     input()
 
-        print(print_tree.travtree2text(traversed))
+        log.debug(print_tree.travtree2text(traversed))
     else:
         traversed = {}
     return traversed
