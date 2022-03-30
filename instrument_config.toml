@@ -54,7 +54,7 @@
     roll_velocity = 3.2 # now m/s (6.56 m/s)
     # supress spurious peaks introduced by tails; back to 3 as the other tail filter should work better
     thres_factor_co = 2.5 # false | factor in linear units
-    thres_factor_cx = 2.0 # false | factor in linear units
+    thres_factor_cx = 3.5 # false | factor in linear units
     cal_offset = 0        # dB
     tail_filter = true    # true | false | omit; only tested with LACROS-Mira 
     # new: seconds instead of index
@@ -236,6 +236,7 @@
 [limrad_peako.settings.peak_finding_params.chirp0]
     # new: seconds instead of index
     thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 0            # s
     h_avg = 89          # m
     span = 0.2          # m s-1
@@ -245,6 +246,7 @@
 [limrad_peako.settings.peak_finding_params.chirp1]
     roll_velocity = 2     # m/s from the right of the spec
     thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 9           # s
     h_avg = 0            # m
     span = 0.25           # m s-1
@@ -253,6 +255,7 @@
     width_thres = 0      # m s-1
 [limrad_peako.settings.peak_finding_params.chirp2]
     thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m
     span = 0.2           # m s-1
@@ -274,7 +277,7 @@
     decoupling = -29
     station_altitude = 22
 [limrad_punta.settings.peak_finding_params.chirp0]
-    thres_factor_co = 1.0 # false | factor in linear units
+    thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
     # new: seconds instead of index
     t_avg = 0            # s
@@ -285,7 +288,7 @@
     width_thres = 0      # m s-1
 [limrad_punta.settings.peak_finding_params.chirp1]
     roll_velocity = 2     # m/s from the right of the spec
-    thres_factor_co = 1.0 # false | factor in linear units
+    thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 9           # s
     h_avg = 0            # m
@@ -294,7 +297,7 @@
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
 [limrad_punta.settings.peak_finding_params.chirp2]
-    thres_factor_co = 1.0 # false | factor in linear units
+    thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m

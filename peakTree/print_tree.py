@@ -158,7 +158,10 @@ def plot_spectrum(travtree, spectrum, savepath):
     # ax.set_xlim([-8.5, 8.5])
 
     ax.legend(loc='upper right')
-    ax.set_title('{} {:0>5.0f} m'.format(dt.strftime('%Y-%m-%d %H:%M:%S'), spectrum['range']))
+    titlestr = '{} {:0>5.0f} m'.format(dt.strftime('%Y-%m-%d %H:%M:%S'), spectrum['range'])
+    if 'ind_chirp' in spectrum:
+        titlestr += f" chirp {spectrum['ind_chirp']}"
+    ax.set_title(titlestr)
     ax.xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
     ax.tick_params(axis='both', which='major', width=1.5, right=True, top=True)

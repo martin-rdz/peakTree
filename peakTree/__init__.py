@@ -521,28 +521,39 @@ class peakTreeBuffer():
         if load_to_ram == True:
             self.spectra_in_ram = True
             self.doppler_spectrum, spec_mask = h.masked_to_plain(self.f.variables['doppler_spectrum'][:])
-            self.doppler_spectrum_h, spec_h_mask = h.masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
-            self.covariance_spectrum_re, cov_re_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
-            self.covariance_spectrum_im, cov_im_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
-            self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
-
             self.doppler_spectrum = scaling*self.doppler_spectrum
+
+
+            if self.settings['polarimetry'] == 'STSR':
+                self.doppler_spectrum_h, spec_h_mask = h.masked_to_plain(self.f.variables['doppler_spectrum_h'][:])
+                self.covariance_spectrum_re, cov_re_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_re'][:])
+                self.covariance_spectrum_im, cov_im_mask = h.masked_to_plain(self.f.variables['covariance_spectrum_im'][:])
+                self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
+            else:
+                self.spectral_mask = spec_mask
+
+            if 'integrated_noise' in self.f.variables:
+                self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
+            else:
+                self.integrated_noise = h.estimate_noise_array(self.doppler_spectrum)*np.repeat(self.n_samples_in_chirp, bins_per_chirp)
             self.doppler_spectrum[self.spectral_mask] = 0
-            self.doppler_spectrum_h[self.spectral_mask] = 0
-            self.covariance_spectrum_re[self.spectral_mask] = np.nan
-            self.covariance_spectrum_im[self.spectral_mask] = np.nan
+            self.integ_noise_per_bin = (self.integrated_noise/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
 
-            self.integrated_noise, _ = h.masked_to_plain(self.f.variables['integrated_noise'][:])
-            self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
+            if self.settings['polarimetry'] == 'STSR':
+                self.doppler_spectrum_h[self.spectral_mask] = 0
+                self.covariance_spectrum_re[self.spectral_mask] = np.nan
+                self.covariance_spectrum_im[self.spectral_mask] = np.nan
+                self.integrated_noise_h, _ = h.masked_to_plain(self.f.variables['integrated_noise_h'][:])
 
-            self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
-            noise_v = self.integrated_noise / 2.
 
-            print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
-            self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-            print(self.noise_h_per_bin.shape)
-            #self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
-            self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
+                self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
+                noise_v = self.integrated_noise / 2.
+
+                print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
+                self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
+                print(self.noise_h_per_bin.shape)
+                #self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
+                self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
             #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
 
             #rhv = np.abs(np.complex(cov_re, cov_im)/np.sqrt(()*(spec_chunk_h + spec_noise_h)))
@@ -755,16 +766,16 @@ class peakTreeBuffer():
             noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
 
             velocity = self.velocity.copy()
+            vel_step = velocity[1] - velocity[0]
             if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
                 log.info(f'>> roll velocity active {roll_velocity}')
-                upck = _roll_velocity(self.velocity, roll_velocity, 
+                upck = _roll_velocity(velocity, vel_step, roll_velocity, 
                                       [specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask])
-                self.velocity = upck[0]
+                velocity = upck[0]
                 specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask = upck[1]
 
-            vel_step = (self.velocity[1]-self.velocity[0])
             window_length = h.round_odd(peak_finding_params['span']/vel_step)
             log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
 
@@ -787,14 +798,16 @@ class peakTreeBuffer():
             if peak_finding_params['smooth_polyorder'] != 0:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+            gaps = (specZ <= 0.) & ~np.isnan(specZ)
+            specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             
             # TODO add for other versions
-            specZ_mask = np.logical_or(specZ_mask, specZ < noise_thres)
-            specZ_mask = np.logical_or(specZ_mask, ~np.isfinite(specZ))
+            specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
 
             peak_finding_params['vel_step'] = vel_step
+            #specZ[specZ_mask] = 0
 
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
                         'noise_thres': noise_thres, 'no_temp_avg': no_averages}
@@ -815,24 +828,18 @@ class peakTreeBuffer():
             
             spectrum['specZcx'] = specZcx[:]
             # spectrum['specZcx_mask'] = np.logical_or(spectrum['specZ_mask'], spectrum['specLDR_mask'])
-            spectrum['specZcx_mask'] =  specZcx_mask[:]
+            if ('thres_factor_cx' in peak_finding_params 
+                and peak_finding_params['thres_factor_cx']):
+                noise_cx_thres = np.nanmin(spectrum['specZcx']) * peak_finding_params['thres_factor_cx']
+            else:
+                noise_cx_thres = noise_mean
+            specZcx_mask = (specZcx_mask | (specZcx < noise_cx_thres))
+            spectrum['noise_cx_thres'] = noise_cx_thres
 
-            # print('test specZcx calc')
-            # print(spectrum['specZcx_mask'])
-            # print(spectrum['specZcx'])
-            #spectrum['specSNRcx'] = spectrum['specSNRco']*spectrum['specLDR']
-            #spectrum['specSNRcx_mask'] = np.logical_or(spectrum['specSNRco_mask'], spectrum['specLDR_mask'])
-
-            thres_Zcx = np.nanmin(spectrum['specZcx'])*peak_finding_params['thres_factor_cx']
-            Zcx_mask = np.logical_or(spectrum['specZcx'] < thres_Zcx, ~np.isfinite(spectrum['specZcx']))
+            trust_ldr_mask = specZcx_mask | ~np.isfinite(spectrum['specZcx']) | specZ_mask
+            spectrum['trust_ldr_mask'] = trust_ldr_mask
             spectrum['specLDRmasked'] = spectrum['specLDR'].copy()
-            spectrum['specLDRmasked'][Zcx_mask] = np.nan
-
-            spectrum['specZcx_mask'] = Zcx_mask
-            spectrum['specZcx_validcx'] = spectrum['specZcx'].copy()
-            spectrum['specZcx_validcx'][Zcx_mask] = 0.0
-            spectrum['specZ_validcx'] = spectrum['specZ'].copy()
-            spectrum['specZ_validcx'][Zcx_mask] = 0.0
+            spectrum['specLDRmasked'][trust_ldr_mask] = np.nan
 
             spectrum['decoupling'] = decoupling
             spectrum['polarimetry'] = self.settings['polarimetry']
@@ -1232,7 +1239,8 @@ class peakTreeBuffer():
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
             log.debug(f'slicer {it_slicer} {ir_slicer} shape {spec_chunk.shape}')
-            log.debug(f'spec shapes {specZ.shape} {specRhv.shape}')
+            #log.debug(f'spec shapes {specZ.shape} {specRhv.shape}')
+            log.debug(f'spec shapes {specZ.shape}')
             #print('spec_ldr', 10*np.log10(specLDR))
 
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
@@ -1252,6 +1260,10 @@ class peakTreeBuffer():
             else:
                 noise_thres = np.min(specZ[~mask]) if len(specZ[~mask]) > 0 else 1e-25
 
+            if len(specZ[~mask]) > 0:
+                print('noise thres different from min ', 
+                      h.lin2z(np.min(specZ[~mask])) - h.lin2z(noise_mean),    
+                      noise_mean/np.min(specZ[~mask]))    
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
@@ -1290,24 +1302,23 @@ class peakTreeBuffer():
             if peak_finding_params['smooth_polyorder'] != 0:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
+            specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             
             # TODO add for other versions
-            specZ_mask = ((specZ == 0.) | ~np.isfinite(specZ) | mask)
-            specZ_mask = np.logical_or(specZ_mask, specZ < noise_thres)
-            specZ_mask = np.logical_or(specZ_mask, ~np.isfinite(specZ))
+            specZ_mask = (specZ == 0.) | mask | (specZ < noise_thres) | ~np.isfinite(specZ)
 
             peak_finding_params['vel_step'] = vel_step
-
-            specZ[specZ_mask] = 0
+            #specZ[specZ_mask] = 0
 
             # also SNR
             if self.settings['polarimetry'] == 'STSR':
                 specSNRco = specZ/noise_h
                 specSNRco_mask = specZ_mask.copy()
-                log.info(f"noise_h {h.lin2z(noise_h):5.3f}  noise_v {h.lin2z(noise_v):5.3f} \
-noise_mean {h.lin2z(noise_mean):5.3f}")
+                log.info(f"noise_h {h.lin2z(noise_h):5.3f}  noise_v {h.lin2z(noise_v):5.3f}" + \
+                         f" noise_mean {h.lin2z(noise_mean):5.3f} noise_thres {h.lin2z(noise_thres):5.3f}")
 
                 # for the SLDR radar this is a rather hypothetical quantity
                 #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
@@ -1338,15 +1349,14 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                     noise_cx_thres = noise_mean * peak_finding_params['thres_factor_cx']
                 else:
                     noise_cx_thres = noise_mean
+                
                 specZcx_mask = (specRhv_mask | (specZcx < noise_cx_thres))
-                specZcx_masked[specZcx_mask] = 0
                 log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
-                specZco_masked = specZco.copy()
-                specZco_masked[specZcx_mask] = 0
+                trust_ldr_mask = specZcx_mask | specZ_mask
 
                 specLDR = specZcx/specZco
                 specLDRmasked = specLDR.copy()
-                specLDRmasked[specZcx_mask] = 0
+                specLDRmasked[trust_ldr_mask] = np.nan
 
                 #print('specZ', h.lin2z(specLDRmasked))
                 #print('specZh', h.lin2z((specZh + specZv)*(1-specRhv)/(specZh + specZv)*(1+specRhv)))
@@ -1354,7 +1364,7 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                 assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
                 spectrum = {
                     'ts': self.timestamps[it], 'range': self.range[ir], 
-                    'vel': vel_chirp,
+                    'vel': vel_chirp, 'ind_chirp': ind_chirp,
                     'polarimetry': self.settings['polarimetry'],
                     'specZ': specZ, 'noise_thres': noise_thres,
                     'specZ_mask': specZ_mask,
@@ -1368,8 +1378,7 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                     'specSNRv': specSNRv, 
 
                     'specZcx': specZcx, 'noise_cx_thres': noise_cx_thres, 
-                    'specZcx_validcx': specZcx_masked, 'specZ_validcx': specZco_masked,
-                    'specZcx_mask': specZcx_mask,
+                    'trust_ldr_mask': trust_ldr_mask,
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
                     #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
                     #'noise_h': noise_h, 'noise_v': noise_v,
@@ -1435,13 +1444,17 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
         Z[:] = -999
         v = Z.copy()
         width = Z.copy()
-        LDR = Z.copy()
         skew = Z.copy()
         bound_l = Z.copy()
         bound_r = Z.copy()
         parent = Z.copy()
         thres = Z.copy()
-        ldrmax = Z.copy()
+        if self.settings['polarimetry'] in ['STSR', 'LDR']:
+            LDR = Z.copy()
+            ldrmax = Z.copy()
+            ldrmin = Z.copy()
+            ldrleft = Z.copy()
+            ldrright = Z.copy()
         prominence = Z.copy()
         no_nodes = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
         part_not_reproduced = np.zeros((timestamps_grid.shape[0], self.range.shape[0]))
@@ -1481,14 +1494,18 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                         Z[it,ir,k] = h.lin2z(val['z'])
                         v[it,ir,k] = val['v']
                         width[it,ir,k] = val['width']
-                        LDR[it,ir,k] = h.lin2z(val['ldr'])
                         skew[it,ir,k] = val['skew']
                         bound_l[it,ir,k] = val['bounds'][0]
                         bound_r[it,ir,k] = val['bounds'][1]
                         parent[it,ir,k] = val['parent_id']
                         thres[it,ir,k] = h.lin2z(val['thres'])
-                        ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
                         prominence[it,ir,k] = h.lin2z(val['prominence'])
+                        if self.settings['polarimetry'] in ['STSR', 'LDR']:
+                            LDR[it,ir,k] = h.lin2z(val['ldr'])
+                            ldrmax[it,ir,k] = h.lin2z(val['ldrmax'])
+                            ldrmin[it,ir,k] = h.lin2z(val['ldrmin'])
+                            ldrleft[it,ir,k] = h.lin2z(val['ldrleft'])
+                            ldrright[it,ir,k] = h.lin2z(val['ldrright'])
 
         if 'add_to_fname' in self.settings:
             add_to_fname = self.settings['add_to_fname']
@@ -1593,7 +1610,18 @@ noise_mean {h.lin2z(noise_mean):5.3f}")
                                 'plot_scale': "linear"})
                 saveVar(dataset, {'var_name': 'ldrmax', 'dimension': ('time', 'range', 'nodes'),
                                 'arr': ldrmax[:], 'long_name': "Maximum LDR from SNR",
-                                #'comment': "",
+                                'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                                'plot_scale': "linear"})
+                saveVar(dataset, {'var_name': 'ldrmin', 'dimension': ('time', 'range', 'nodes'),
+                                'arr': ldrmin[:], 'long_name': "Minimum LDR",
+                                'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                                'plot_scale': "linear"})
+                saveVar(dataset, {'var_name': 'ldrleft', 'dimension': ('time', 'range', 'nodes'),
+                                'arr': ldrleft[:], 'long_name': "LDR left of peak center",
+                                'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
+                                'plot_scale': "linear"})
+                saveVar(dataset, {'var_name': 'ldrright', 'dimension': ('time', 'range', 'nodes'),
+                                'arr': ldrright[:], 'long_name': "LDR right of peak center",
                                 'units': "", 'missing_value': -999., 'plot_range': (-50., 20.),
                                 'plot_scale': "linear"})
             saveVar(dataset, {'var_name': 'prominence', 'dimension': ('time', 'range', 'nodes'),

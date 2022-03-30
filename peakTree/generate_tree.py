@@ -138,8 +138,8 @@ class Node():
             # insert here
             spec_left = self.spec[bounds_left[0]-self.bounds[0]:bounds_left[1]+1-self.bounds[0]]
             spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
-            prom_left = spec_left[spec_left.argmax()]/thres
-            prom_right = spec_right[spec_right.argmax()]/thres
+            prom_left = spec_left[np.nanargmax(spec_left)]/thres
+            prom_right = spec_right[np.nanargmax(spec_right)]/thres
 
             cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
             if all(cond_prom) or ignore_prom:
@@ -174,10 +174,10 @@ class Node():
         # or insert here
         else:
             spec_left = self.spec[:new_index+1-self.bounds[0]]
-            prom_left = spec_left[spec_left.argmax()]/current_thres
+            prom_left = spec_left[np.nanargmax(spec_left)]/current_thres
             # print('spec_chunk left ', self.bounds[0], new_index, h.lin2z(prom_left), spec_left)
             spec_right = self.spec[new_index-self.bounds[0]:]
-            prom_right = spec_right[spec_right.argmax()]/current_thres
+            prom_right = spec_right[np.nanargmax(spec_right)]/current_thres
             # print('spec_chunk right ', new_index, self.bounds[1], h.lin2z(prom_right), spec_right)
 
             cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
@@ -316,7 +316,9 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #spectrum['specZcx'] = (spectrum['specLDR']*spectrum['specZ'])/(1+spectrum['specLDR'])
 
     #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
-    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = np.nanargmax(spectrum['specZ'][bounds[0]:bounds[1]+1])
+    #print('Z at argmax ', h.lin2z(spectrum["specZ"][bounds[0]:bounds[1]+1][ind_max-2:ind_max+3]))
+    #print('Z at argmax ', spectrum["specZ"][bounds[0]:bounds[1]+1][ind_max-2:ind_max+3])
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
     prominence_mask = mask[ind_max]
@@ -327,45 +329,49 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #print('LDR', h.lin2z(spectrum['validSNRcx'][bounds[0]:bounds[1]+1]/spectrum['validSNRco'][bounds[0]:bounds[1]+1]))
     moments['z'] = Z
     
-    # new try for the peak ldr (sum, then relative; not spectrum of relative with sum)
-    #
-    # omit this section, it only takes time
-    #
-    # if not np.all(spectrum['specZ_mask']) and not np.all(spectrum['specZcx_mask']):
-    #     min_Zco = np.min(spectrum["specZ"][~spectrum['specZ_mask']])
-    #     min_Zcx = np.min(spectrum["specZcx"][~spectrum['specZcx_mask']])
-    #     Zco = spectrum['specZ']
-    #     Zcx = spectrum['specZcx']
-    #     #ldr = np.nansum(masked_Zcx[bounds[0]:bounds[1]+1]/min_Zco)/np.sum(masked_Zco[bounds[0]:bounds[1]+1]/min_Zcx)
-    #     ldr = np.nansum(Zcx[bounds[0]:bounds[1]+1])/(Zco[bounds[0]:bounds[1]+1]).sum()
-    #     ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
-    # else:
-    #     ldr = np.nan
-    #     ldrmax = np.nan
-    
     # ldr calculation after the debugging session
-    ldrmax = spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max]
-    if not np.all(spectrum['specZcx_mask']):
-        ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum()/(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
+    specLDRchunk = spectrum["specLDR"][bounds[0]:bounds[1]+1]
+    ldrmax = specLDRchunk[ind_max]
+    ldrmin = np.nanmin(specLDRchunk[specLDRchunk > 0])
+    # ldrmax is at maximum of co signal, the minimum should not be smaller,
+    # (would indicate a peak not a dip) 
+    ldrmin = ldrmax if ldrmin < ldrmax else ldrmin
+    #print('ldr ', h.lin2z(spectrum["specLDR"][bounds[0]:bounds[1]+1]))
+    #print('ldrmax ', h.lin2z(spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max-1:ind_max+2]), bounds, ind_max)
+    #print('Zcx_validcx', spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1], spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1])
+    if not np.all(spectrum['trust_ldr_mask']):
+        ldr2 = np.nanmean(spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+        #ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum()/(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
     else:
         ldr2 = np.nan
 
-    decoup = 10**(spectrum['decoupling']/10.)
+    #decoup = 10**(spectrum['decoupling']/10.)
     #print('ldr ', h.lin2z(ldr), ' ldrmax ', h.lin2z(ldrmax), 'new ldr ', h.lin2z(ldr2))
     #print('ldr without decoup', h.lin2z(ldr-decoup), ' ldrmax ', h.lin2z(ldrmax-decoup), 'new ldr ', h.lin2z(ldr2-decoup))
-
-    # for i in range(spectrum['specZcx_validcx'].shape[0]):
-    #     print(i, h.lin2z(np.array([spectrum['specZ'][i], spectrum['specZcx_validcx'][i], spectrum['specZ_validcx'][i]])), spectrum['specZcx_mask'][i])
-
-    #moments['ldr'] = ldr
     # seemed to have been quite slow (79us per call or 22% of function)
     #moments['ldr'] = ldr2 if (np.isfinite(ldr2) and not np.allclose(ldr2, 0.0)) else np.nan
     if np.isfinite(ldr2) and not np.abs(ldr2) < 0.0001:
         moments['ldr'] = ldr2
     else:
-        moments['ldr'] = np.nan
+        moments['ldr'] = 1e-6
     #moments['ldr'] = ldr2-decoup
     moments['ldrmax'] = ldrmax
+    moments['ldrmin'] = ldrmin
+
+    # is the ldr symmetric?
+    vel = spectrum['vel'][bounds[0]:bounds[1]+1]
+    vel_step = vel[1] - vel[0]
+    width_bins = np.floor(moments['width']/vel_step).astype(int)
+    mid_bin = np.floor((bounds[1] - bounds[0])/2).astype(int)
+    left_bin = mid_bin - width_bins
+    right_bin = mid_bin + width_bins
+    #print(bounds, width_bins, mid_bin, vel[mid_bin],
+    #      left_bin, vel[left_bin], right_bin, vel[right_bin])
+    ldr_left = spectrum['specLDRmasked'][bounds[0]:bounds[1]+1][left_bin]
+    ldr_right = spectrum['specLDRmasked'][bounds[0]:bounds[1]+1][right_bin]
+    #print(h.lin2z(ldr_left), h.lin2z(ldr_right))
+    moments['ldrleft'] = ldr_left
+    moments['ldrright'] = ldr_right
 
     #moments['minv'] = spectrum['vel'][bounds[0]]
     #moments['maxv'] = spectrum['vel'][bounds[1]]
@@ -384,7 +390,8 @@ def calc_moments_STSR(spectrum, bounds, thres, no_cut=False):
     Returns
         moment, spectrum
     """
-    Z = spectrum['specZ'][bounds[0]:bounds[1]+1].sum()
+    mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1]
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1][~mask].sum()
     # TODO add the masked processing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:
@@ -401,7 +408,7 @@ def calc_moments_STSR(spectrum, bounds, thres, no_cut=False):
     moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
 
     #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
-    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = np.nanargmax(spectrum['specZ'][bounds[0]:bounds[1]+1])
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
     prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
@@ -458,7 +465,8 @@ def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     Returns
         moment, spectrum
     """
-    Z = (spectrum['specZ'][bounds[0]:bounds[1]+1]).sum()
+    mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1]
+    Z = spectrum['specZ'][bounds[0]:bounds[1]+1][~mask].sum()
     masked_Z = h.fill_with(spectrum['specZ'], spectrum['specZ_mask'], 0.0)
     if not no_cut:
         masked_Z = h.fill_with(masked_Z, (masked_Z<thres), 0.0)
@@ -466,7 +474,7 @@ def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     moments = {'v': mom[0], 'width': mom[1], 'skew': mom[2]}
     
     #ind_max = spectrum['specSNRco'][bounds[0]:bounds[1]+1].argmax()
-    ind_max = spectrum['specZ'][bounds[0]:bounds[1]+1].argmax()
+    ind_max = np.nanargmax(spectrum['specZ'][bounds[0]:bounds[1]+1])
 
     prominence = spectrum['specZ'][bounds[0]:bounds[1]+1][ind_max]/thres
     prominence_mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1][ind_max]
@@ -787,8 +795,12 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
             # if moments['v'] == 0.0 or not np.isfinite(moments['v']):
             #     print(i, traversed[i])
             #     input()
+            if spectrum['polarimetry'] in ['LDR', 'STSR']:
+                print(f"{traversed[i]['bounds']} ldrs {h.lin2z(moments['ldrmin']):.2f}  ", 
+                      f"{h.lin2z(moments['ldrleft']):.2f} {h.lin2z(moments['ldrright']):.2f}")
 
         log.debug(print_tree.travtree2text(traversed))
+
     else:
         traversed = {}
     return traversed
