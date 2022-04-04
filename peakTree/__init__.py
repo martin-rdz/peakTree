@@ -418,7 +418,7 @@ class peakTreeBuffer():
         self.no_chirps = self.chirp_start_indices.shape[0]
         log.debug(f'chirp_start_indices {self.chirp_start_indices}')
         bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
-        log.debug('range bins per chirp {bins_per_chirp} {bins_per_chirp.shape}')
+        log.debug(f'range bins per chirp {bins_per_chirp} {bins_per_chirp.shape}')
         self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp)
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
@@ -1219,8 +1219,19 @@ class peakTreeBuffer():
                 #print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
                 #print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
 
+                # using the myagkov formula and (traditional) masking
+                specZcx_chunk = (spec_h_chunk + spec_h_chunk)*(1-rhv_chunk)
+                specZco_chunk = (spec_h_chunk + spec_h_chunk)*(1+rhv_chunk)
+                # the Galetti formula does not like rhos larger 1.0 (those give LDRs < 0)
+                #specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
+                #specLDRmasked[specRhv <= 0.93] = np.nan #(R_hv gives a LDR of -14.4dB)
+                rhv_mask = ((rhv_chunk < 0.93) | (rhv_chunk >= 1.0) | mask_chunk)
+                specRhv_mask = np.all(rhv_mask, axis=(0,1))
+
                 specZv = np.average(spec_v_chunk, axis=(0,1))
                 specZh = np.average(spec_h_chunk, axis=(0,1))
+                specZcx = np.average(specZcx_chunk, axis=(0,1))
+                specZco = np.average(specZco_chunk, axis=(0,1))
                 #cov_re = np.average(cov_re_chunk, axis=(0,1))
                 #cov_im = np.average(cov_im_chunk, axis=(0,1))
                 #rhv = np.average(rhv_chunk, axis=(0,1))
@@ -1309,6 +1320,9 @@ class peakTreeBuffer():
             
             # TODO add for other versions
             specZ_mask = (specZ == 0.) | mask | (specZ < noise_thres) | ~np.isfinite(specZ)
+            #specZ_mask = (specZ < noise_thres) | ~np.isfinite(specZ)
+            # otherwise peak finding identifies fully masked subpeaks
+            specZ[specZ_mask] = np.nan  
 
             peak_finding_params['vel_step'] = vel_step
             #specZ[specZ_mask] = 0
@@ -1329,21 +1343,12 @@ class peakTreeBuffer():
                 #print('SNRco', specSNRco)
                 #print('LDR masks', (specSNRv < 300) , (specSNRco < 300) , (specZ_mask))
                 #specRhv_mask = ((specSNRv < 200) | (specSNRco < 200) | specZ_mask)
-                specRhv_mask = ((specSNRv < 100) | (specSNRco < 100) | specZ_mask)
+                #specRhv_mask = ((specSNRv < 100) | (specSNRco < 100) | specZ_mask)
                 	    
                 specRhvmasked = specRhv.copy()
-                # the Galetti formula does not like rhos larger 1.0 (those give LDRs < 0)
-                #specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
-                # required for subpeak LDR calculation
-                specRhv_mask = ((specRhv >= 1.0) | specZ_mask)
                 specRhvmasked[specRhv_mask] = np.nan
 
-                # using the myagkov formula and (traditional) masking
-                specZcx = (specZh + specZv)*(1-specRhv)
-                specZco = (specZh + specZv)*(1+specRhv)
-                #print('Zh - Z', h.lin2z(specZh)-h.lin2z(specZ))
-
-                specZcx_masked = specZcx.copy()
+                #specZcx_masked = specZcx.copy()
                 if ('thres_factor_cx' in peak_finding_params 
                     and peak_finding_params['thres_factor_cx']):
                     noise_cx_thres = noise_mean * peak_finding_params['thres_factor_cx']
@@ -1377,6 +1382,7 @@ class peakTreeBuffer():
                     'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
                     'specSNRv': specSNRv, 
 
+                    'specZco': specZco,
                     'specZcx': specZcx, 'noise_cx_thres': noise_cx_thres, 
                     'trust_ldr_mask': trust_ldr_mask,
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
@@ -1404,9 +1410,9 @@ class peakTreeBuffer():
                 }
 
 
+            travtree = {}
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
             travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
-            #travtree = {}
 
             return travtree, spectrum
 

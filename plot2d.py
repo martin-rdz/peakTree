@@ -161,7 +161,6 @@ ax.text(1.15, -0.12, txt,
 savename = savepath + "{}_threshold_node0.png".format(dt_list[0].strftime("%Y%m%d_%H%M"))
 fig.savefig(savename, dpi=250)
 
-exit()
 for i in plot_nodes:
     print('plot node ', i)
     Z_node = pTB.f.variables['Z'][:,:,i]
@@ -252,7 +251,7 @@ for i in plot_nodes:
         pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
                             hrange,
                             np.transpose(ldrmax_node),
-                            cmap=cmap, vmin=-36, vmax=0)
+                            cmap=cmap, vmin=-32, vmax=-7)
         cbar = fig.colorbar(pcmesh, extend='min')
         #ax.set_xlim([dt_list[0], dt_list[-1]])
         #ax.set_ylim([height_list[0], height_list[-1]])
@@ -295,7 +294,7 @@ for i in plot_nodes:
         pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
                             hrange,
                             np.transpose(ldr_node),
-                            cmap=cmap, vmin=-36, vmax=0)
+                            cmap=cmap, vmin=-32, vmax=-7)
         cbar = fig.colorbar(pcmesh, extend='min')
         #ax.set_xlim([dt_list[0], dt_list[-1]])
         #ax.set_ylim([height_list[0], height_list[-1]])
@@ -336,7 +335,7 @@ for i in plot_nodes:
         pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
                             hrange,
                             np.transpose(ldrmin_node),
-                            cmap=cmap, vmin=-36, vmax=0)
+                            cmap=cmap, vmin=-32, vmax=-7)
         cbar = fig.colorbar(pcmesh, extend='min')
         #ax.set_xlim([dt_list[0], dt_list[-1]])
         #ax.set_ylim([height_list[0], height_list[-1]])
@@ -346,7 +345,7 @@ for i in plot_nodes:
         ax.set_ylim(plot_height_interval)
         ax.set_xlabel("Time UTC", fontweight='semibold', fontsize=15)
         ax.set_ylabel("Height", fontweight='semibold', fontsize=15)
-        cbar.ax.set_ylabel("LDRmax [dB]", fontweight='semibold', fontsize=15)
+        cbar.ax.set_ylabel("LDRmin [dB]", fontweight='semibold', fontsize=15)
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))

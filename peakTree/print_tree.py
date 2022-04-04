@@ -112,7 +112,13 @@ def plot_spectrum(travtree, spectrum, savepath):
     dt=h.ts_to_dt(spectrum['ts'])
 
     if 'decoupling' in spectrum:
-        decoupling_threshold = h.z2lin(h.lin2z(spectrum['specZ'])+spectrum['decoupling'])
+        if 'specZco' in spectrum:
+            decoupling_threshold = h.z2lin(
+                h.lin2z(spectrum['specZco'])+spectrum['decoupling'])
+        else:
+            decoupling_threshold = h.z2lin(
+                h.lin2z(spectrum['specZ'])+spectrum['decoupling'])
+            spectrum['specZco'] = spectrum['specZ']
     # cut again to remove the smoothing effects at the edges
     specZ_cut = np.ma.masked_less(spectrum['specZ'], spectrum['noise_thres'])
     
@@ -147,8 +153,11 @@ def plot_spectrum(travtree, spectrum, savepath):
     if 'specZcx' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specZcx']), 
                 linewidth=1.5, color='darkviolet', where='mid', label='specZcx')
+    if 'specZco' in spectrum:
+        ax.step(spectrum['vel'], h.lin2z(spectrum['specZco']), 
+                linewidth=0.8, color='grey', where='mid')
         ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
-                linewidth=1.5, color='grey', where='mid', label='decoupling')
+                linewidth=1.0, color='grey', where='mid', label='decoupling')
     ax.set_xlim([-6,3])
     ax.set_ylabel('Spectral Reflectivity [dBZ]')
     ax.set_xlabel('Velocity [m s$\\mathregular{^{-1}}$]')
@@ -156,6 +165,7 @@ def plot_spectrum(travtree, spectrum, savepath):
     #special for the convective case
     # ax.set_ylim(bottom=-75)
     # ax.set_xlim([-8.5, 8.5])
+    ax.set_ylim([-75, 2])
 
     ax.legend(loc='upper right')
     titlestr = '{} {:0>5.0f} m'.format(dt.strftime('%Y-%m-%d %H:%M:%S'), spectrum['range'])

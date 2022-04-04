@@ -332,7 +332,10 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     # ldr calculation after the debugging session
     specLDRchunk = spectrum["specLDR"][bounds[0]:bounds[1]+1]
     ldrmax = specLDRchunk[ind_max]
-    ldrmin = np.nanmin(specLDRchunk[specLDRchunk > 0])
+    if any(specLDRchunk > 0):
+        ldrmin = np.nanmin(specLDRchunk[specLDRchunk > 0])
+    else:
+        ldrmin = np.nan
     # ldrmax is at maximum of co signal, the minimum should not be smaller,
     # (would indicate a peak not a dip) 
     ldrmin = ldrmax if ldrmin < ldrmax else ldrmin
