@@ -1412,7 +1412,7 @@ class peakTreeBuffer():
 
             travtree = {}
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params, gaps=gaps)
 
             return travtree, spectrum
 
