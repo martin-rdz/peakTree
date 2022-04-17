@@ -406,6 +406,13 @@ class peakTreeBuffer():
         log.debug(f'Header: {header.keys()}')
         log.debug(f'Data  : {data.keys()}')
 
+        log.debug(f"no averaged spectra: {header['ChirpReps']/header['SpecN']}")
+        Tc = 2.99e8/(4*header['MaxVel']*header['Freq']*1e9)
+        log.debug(f"Tc [from Nyquist]: {Tc}")
+        log.debug(f"Sample dur: {Tc*header['ChirpReps']} {np.sum(Tc*header['ChirpReps'])} {header['SampDur']}")
+        log.debug(f"SeqIntTime: {header['SeqIntTime']}")
+
+
         offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
         self.timestamps = offset + data['Time'] + data['MSec']*1e-3
         self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
@@ -761,9 +768,12 @@ class peakTreeBuffer():
             # print('specLDR', specLDR.shape, specLDR)
             # print('specSNRco', specSNRco.shape, specSNRco)
 
-
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
-            noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            #noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            noise_thres_old = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            # alternate fit estimate for the problematic mira spectra 
+            noise_thres = 1e-25 if empty_spec else np.nanmin(specZ_2d[specZ_2d > 0])*peak_finding_params['thres_factor_co']
+            print(f'noise est {h.lin2z(noise_thres_old):.2f} -> {h.lin2z(noise_thres):.2f}')
 
             velocity = self.velocity.copy()
             vel_step = velocity[1] - velocity[0]
@@ -798,13 +808,14 @@ class peakTreeBuffer():
             if peak_finding_params['smooth_polyorder'] != 0:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
-            gaps = (specZ <= 0.) & ~np.isnan(specZ)
+            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
             specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             
             # TODO add for other versions
-            specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
+            #specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
+            specZ_mask = (specZ < noise_thres) | ~np.isfinite(specZ)
 
             peak_finding_params['vel_step'] = vel_step
             #specZ[specZ_mask] = 0
@@ -873,7 +884,7 @@ class peakTreeBuffer():
                 fit_spec = h.lin2z(specZ_raw.copy())
                 #fit_spec[ind_vel_node0-int(no_ind/2):ind_vel_node0+int(no_ind/2)] = np.nan
                 fit_spec[fit_spec > h.lin2z(noise_thres) + 13] = np.nan
-                print('noise thres ', h.lin2z(noise_thres),h.lin2z(noise_thres) + 15)
+                print('noise thres ', h.lin2z(noise_thres), h.lin2z(noise_thres) + 15)
                 fit_mask = np.isfinite(fit_spec)
                 try:
                     popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])
@@ -881,7 +892,7 @@ class peakTreeBuffer():
                 except:
                     successful_fit = False
                     log.warning('fit failed')
-                    input()
+                    #input()
 
                 if successful_fit:
                     travtree, spectrum = self.get_tree_at(
