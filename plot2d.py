@@ -102,9 +102,9 @@ cbar.ax.set_ylabel("Number of peaks", fontweight='semibold', fontsize=15)
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
 # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-# ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+# ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
 # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
 ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
 ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -142,9 +142,9 @@ cbar.ax.set_ylabel("Threshold node 0 [dBZ]", fontweight='semibold', fontsize=15)
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
 # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-# ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+# ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
 # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
 ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
 ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -183,9 +183,9 @@ for i in plot_nodes:
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
     # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
     # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
     ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
     ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -222,9 +222,9 @@ for i in plot_nodes:
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
     # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+    # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
     # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+    ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
     ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
     ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -265,9 +265,9 @@ for i in plot_nodes:
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -308,9 +308,9 @@ for i in plot_nodes:
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -349,9 +349,9 @@ for i in plot_nodes:
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -389,9 +389,9 @@ for i in plot_nodes:
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 
@@ -429,9 +429,9 @@ for i in plot_nodes:
         ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
 
         # ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        # ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         # ax.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(500))
-        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,30]))
+        ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(byminute=[0,20,40,60]))
         ax.xaxis.set_minor_locator(matplotlib.dates.MinuteLocator(byminute=range(0,61,5)))
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
 

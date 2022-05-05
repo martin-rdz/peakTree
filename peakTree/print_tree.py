@@ -145,6 +145,11 @@ def plot_spectrum(travtree, spectrum, savepath):
     if 'specZ_raw' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specZ_raw']), 
                 linewidth=1.5, color='lightsalmon', where='mid', label='specZ raw')
+    if 'specZco' in spectrum:
+        ax.step(spectrum['vel'], h.lin2z(spectrum['specZco']), 
+                linewidth=0.8, color='grey', where='mid')
+        ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
+                linewidth=1.0, color='grey', where='mid', label='decoupling')
 
     ax.step(spectrum['vel'], h.lin2z(spectrum['specZ']),
             linewidth=1.5, color='pink', where='mid')
@@ -153,11 +158,6 @@ def plot_spectrum(travtree, spectrum, savepath):
     if 'specZcx' in spectrum:
         ax.step(spectrum['vel'], h.lin2z(spectrum['specZcx']), 
                 linewidth=1.5, color='darkviolet', where='mid', label='specZcx')
-    if 'specZco' in spectrum:
-        ax.step(spectrum['vel'], h.lin2z(spectrum['specZco']), 
-                linewidth=0.8, color='grey', where='mid')
-        ax.step(spectrum['vel'], h.lin2z(decoupling_threshold), 
-                linewidth=1.0, color='grey', where='mid', label='decoupling')
     ax.set_xlim([-6,3])
     ax.set_ylabel('Spectral Reflectivity [dBZ]')
     ax.set_xlabel('Velocity [m s$\\mathregular{^{-1}}$]')
