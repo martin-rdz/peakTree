@@ -1336,7 +1336,7 @@ class peakTreeBuffer():
             # smoothing and cutting. the order can be defined in instrument_config
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0:
+            if peak_finding_params['smooth_polyorder'] != 0 and window_length > 1:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
