@@ -471,10 +471,15 @@ class peakTreeBuffer():
 
                 # updated noise
                 self.navg = (2*header['ChirpFFTSize']*header['ChirpReps'])/(header['SpecN'])-1
-                self.noise_lvl = (data['TotNoisePow']+data['HNoisePow'])/\
+                self.noise_lvl = self.integrated_noise/\
                             (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                if 'TotNoisePow' in data:
+                    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                    self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                else:
+                    # option for spectra files for which no noise power variable is saved - untested!
+                    self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
+                    self.noise_tot = self.noise_lvl - self.noise_h
                 Q = 6
                 self.noise_thres = Q*self.noise_lvl/np.repeat(np.sqrt(self.navg), bins_per_chirp)
 
