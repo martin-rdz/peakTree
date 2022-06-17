@@ -695,6 +695,18 @@ def bounds_from_find_peak(peaks, prop):
 
     return bounds
 
+
+def remove_gap_peaks(locs, props, gaps):
+    """remove peaks detected where gaps were filled with raw spectrum values
+    """
+    index = [i for i in range(len(locs)) if not locs[i] in gaps]
+    locs = locs[index]
+    props_out = {}
+    for key, val in props.items():
+        props_out[key] = val[index]
+    return locs, props_out
+
+
 def fix_peaks_unique(peaks, prop):
     """equally high peaks are not prominence filtered by find_peaks
     (actually specified behavior)
@@ -720,7 +732,7 @@ def fix_peaks_unique(peaks, prop):
     return peaks, prop
 
 
-def tree_from_spectrum_peako(spectrum, peak_finding_params):
+def tree_from_spectrum_peako(spectrum, peak_finding_params, gaps=None):
     """generate the tree and return a traversed version use peako-like peakfinder
 
     Args:
@@ -743,6 +755,8 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params):
         prominence=peak_finding_params['prom_thres'],
         width=width,
         rel_height=0.5)
+    if gaps is not None:
+        locs, props = remove_gap_peaks(locs, props, np.where(gaps)[0])
     log.debug(f'find_peaks locs {locs} props {props}')
     #noise_floor_edges = detect_peak_simple(masked_Z_pf, spectrum['noise_thres'])
     #print('noise_floor_edges', noise_floor_edges)

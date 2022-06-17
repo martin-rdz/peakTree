@@ -471,10 +471,15 @@ class peakTreeBuffer():
 
                 # updated noise
                 self.navg = (2*header['ChirpFFTSize']*header['ChirpReps'])/(header['SpecN'])-1
-                self.noise_lvl = (data['TotNoisePow']+data['HNoisePow'])/\
+                self.noise_lvl = self.integrated_noise/\
                             (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                if 'TotNoisePow' in data:
+                    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                    self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                else:
+                    # option for spectra files for which no noise power variable is saved - untested!
+                    self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
+                    self.noise_tot = self.noise_lvl - self.noise_h
                 Q = 6
                 self.noise_thres = Q*self.noise_lvl/np.repeat(np.sqrt(self.navg), bins_per_chirp)
 
@@ -1336,7 +1341,7 @@ class peakTreeBuffer():
             # smoothing and cutting. the order can be defined in instrument_config
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0:
+            if peak_finding_params['smooth_polyorder'] != 0 and window_length > 1:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
@@ -1439,7 +1444,7 @@ class peakTreeBuffer():
 
             travtree = {}
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params, gaps=gaps)
 
             return travtree, spectrum
 

@@ -78,9 +78,15 @@ def fill_with(array, mask, fill):
     return filled
 
 
-def round_odd(f):
+def round_odd_old(f):
     return int(np.ceil(f/2.) * 2 + 1)
 
+
+def round_odd(f):
+    """round to odd number
+    :param f: float number to be rounded to odd number
+    """
+    return round(f) if round(f) % 2 == 1 else round(f) + 1
 
 def flatten(xs):
     """flatten inhomogeneous deep lists
@@ -151,6 +157,21 @@ def estimate_noise(spec, mov_avg=1):
             'noise_var': np.var(noise_part), 
             'no_noise_bins': i_noise}
 
+@jit(nopython=True, fastmath=True)
+def estimate_mean_noise(spec, mov_avg=1):
+    i_noise = len(spec)
+    spec_sort = np.sort(spec)
+    for i in range(spec_sort.shape[0]):
+        partial = spec_sort[:i+1]
+        mean = partial.mean()
+        var = partial.var()
+        if var * mov_avg * 2 < mean**2.:
+            i_noise = i
+        else:
+            break
+    noise_part = spec_sort[:i_noise+1]
+    return np.mean(noise_part)
+
 
 def estimate_noise_array(spectra_array):
     """
@@ -164,6 +185,6 @@ def estimate_noise_array(spectra_array):
     out = np.zeros(spectra_array.shape[:2])-999.0
     for ts in range(spectra_array.shape[0]):
         for rg in range(spectra_array.shape[1]):
-            out[ts, rg] = estimate_noise(spectra_array[ts, rg, :])['noise_mean']
+            out[ts, rg] = estimate_mean_noise(spectra_array[ts, rg, :])
 
     return out
