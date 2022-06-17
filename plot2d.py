@@ -128,7 +128,8 @@ fig, ax = plt.subplots(1, figsize=(10, 5.7))
 pcmesh = ax.pcolormesh(matplotlib.dates.date2num(dt_list),
                     hrange,
                     np.transpose(thres_0),
-                    cmap='jet', vmin=-70, vmax=-30)
+                    #cmap='jet', vmin=-70, vmax=-30)
+                    cmap='jet', vmin=-57, vmax=-42)
 cbar = fig.colorbar(pcmesh)
 #ax.set_xlim([dt_list[0], dt_list[-1]])
 #ax.set_ylim([height_list[0], height_list[-1]])

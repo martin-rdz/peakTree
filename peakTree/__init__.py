@@ -473,9 +473,19 @@ class peakTreeBuffer():
                 self.navg = (2*header['ChirpFFTSize']*header['ChirpReps'])/(header['SpecN'])-1
                 self.noise_lvl = self.integrated_noise/\
                             (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
+                #if 'TotNoisePow' in data:
+                #    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                #    self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                #else:
+                #    # option for spectra files for which no noise power variable is saved - untested!
+                #    self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
+                #    self.noise_tot = self.noise_lvl - self.noise_h
+
                 if 'TotNoisePow' in data:
-                    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                    self.noise_lvl = (data['TotNoisePow']+data['HNoisePow'])/\
+                                (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
                     self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
                 else:
                     # option for spectra files for which no noise power variable is saved - untested!
                     self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
@@ -1067,41 +1077,35 @@ class peakTreeBuffer():
             #self.indices = self.f.variables['spectrum_index'][:]
             #self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
              
-            if not temporal_average:
-                if self.spectra_in_ram:
-                    index = self.indices[it,ir]
-                    specZ = h.z2lin(self.spectra[index,:])
+            print('slicer ', it_slicer, ir_slicer)
+            if self.spectra_in_ram:
+                #indices = self.indices[it_b:it_e+1,ir].tolist()
+                indices = self.indices[it_slicer,ir_slicer].tolist()
+                print(indices, len(indices))
+                indices = h.filter_none_rec(indices)
+                print(indices)
+                if indices:
+                    specZ = h.z2lin(self.spectra[indices,:])
                 else:
-                    index = self.f.variables['spectrum_index'][it,ir]
-                    specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][index,:])
-                    # specZ = self.f.variables['spectra'][it,ir,:] 
-                no_averages = 1 
-                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
-                specZ_mask = specZ == 0. 
-            else:
-                if self.spectra_in_ram:
-                    indices = self.indices[it_b:it_e+1,ir].tolist()
-                    #print(indices)
-                    indices = [i for i in indices if i is not None]
-                    if indices:
-                        specZ = h.z2lin(self.spectra[indices,:])
-                    else:
-                        #empty spectrum
-                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
-                else: 
-                    indices = self.f.variables['spectrum_index'][it_b:it_e+1,ir].tolist()
-                    indices = [i for i in indices if i is not None]
-                    if indices:
-                        specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][indices,:])
-                    else:
-                        #empty spectrum
-                        specZ = np.full((2, self.velocity.shape[0]), h.z2lin(-70))
+                    #empty spectrum
+                    specZ = np.full((1, 1, self.velocity.shape[0]), h.z2lin(-70))
+            else: 
+                indices = self.f.variables['spectrum_index'][it_slicer,ir_slicer].tolist()
+                indices = h.filter_none_rec(indices)
+                if indices:
+                    specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][indices,:])
+                else:
+                    #empty spectrum
+                    specZ = np.full((1, 1, self.velocity.shape[0]), h.z2lin(-70))
 
-                no_averages = specZ.shape[0] 
-                specZ = np.average(specZ, axis=0)
-                specZ = specZ * self.cal_constant_lin * self.range[ir]**2
-                specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
-                assert np.all(~specZ_mask), 'mask probably not necessary for kazr spec'
+            print('specZ shape', specZ.shape)
+            no_averages = np.prod(specZ.shape[:-1])
+            specZ = np.average(specZ, axis=(0,1))
+            print('specZ shape', specZ.shape)
+            assert specZ.shape[0] == self.no_fft, 'no_fft inconsistent'
+            specZ = specZ * self.cal_constant_lin * self.range[ir]**2
+            specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+            assert np.all(~specZ_mask), 'mask probably not necessary for kazr spec'
  
             noise = h.estimate_noise(specZ, no_averages) 
             #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
@@ -1111,40 +1115,35 @@ class peakTreeBuffer():
             #noise_thres = noise['noise_sep'] 
             noise_thres = noise['noise_mean']*peak_finding_params['thres_factor_co']
  
-            velocity = self.velocity
-            if roll_velocity or ('roll_velocity' in self.settings and self.settings['roll_velocity']):
-                if 'roll_velocity' in self.settings and self.settings['roll_velocity']:
-                    roll_velocity = self.settings['roll_velocity']
-                vel_step = self.velocity[1] - self.velocity[0]
-                velocity = np.concatenate((
-                    np.linspace(self.velocity[0] - roll_velocity * vel_step, 
-                                self.velocity[0] - vel_step, 
-                                num=roll_velocity), 
-                    self.velocity[:-roll_velocity]))
+            velocity = self.velocity.copy()
+            vel_step = velocity[1] - velocity[0]
+            if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
+                if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
+                    roll_velocity = peak_finding_params['roll_velocity']
+                log.info(f'>> roll velocity active {roll_velocity}')
+                upck = _roll_velocity(velocity, vel_step, roll_velocity, 
+                                      [specZ, specZ_mask])
+                velocity = upck[0]
+                specZ, specZ_mask = upck[1]
 
-                specZ = np.concatenate((specZ[-roll_velocity:], 
-                                        specZ[:-roll_velocity]))
-                specZ_mask = np.concatenate((specZ_mask[-roll_velocity:], 
-                                             specZ_mask[:-roll_velocity]))
+            window_length = h.round_odd(peak_finding_params['span']/vel_step)
+            log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
 
-            if 'span' in peak_finding_params:
-                window_length = h.round_odd(peak_finding_params['span']/(self.velocity[1]-self.velocity[0]))
-                log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+            specZ_raw = specZ.copy()
+
+            # --------------------------------------------------------------------
+            # smoothing and cutting. the order can be defined in instrument_config
+            if self.settings['smooth_cut_sequence'] == 'cs':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            if peak_finding_params['smooth_polyorder'] != 0:
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                        polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
-            else:
-                if 'vel_smooth' in peak_finding_params and type(peak_finding_params['vel_smooth']) == list:
-                    print('vel_smooth based on list')
-                    convol_window = peak_finding_params['vel_smooth']
-                    print('convol_window ', convol_window)
-                    specZ = np.convolve(specZ, convol_window, mode='same')
-                elif 'vel_smooth' in peak_finding_params:
-                    convol_window = np.array([0.5,1,0.5])/2.0
-                    print('convol_window ', convol_window)
-                    specZ = np.convolve(specZ, convol_window, mode='same')
-                else:
-                    print("! no smoothing applied")
-             
+                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
+            specZ[gaps] = specZ_raw[gaps]
+            if self.settings['smooth_cut_sequence'] == 'sc':
+                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            
+            specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
  
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 

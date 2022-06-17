@@ -43,7 +43,7 @@
     loader = "mira"
 [Lacros_Pun.settings]
     decoupling = -30
-    grid_time = 6
+    grid_time = 7
     max_no_nodes = 15
     polarimetry = 'LDR'
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
@@ -122,20 +122,37 @@
     thres_factor_co = 2.0 # false | factor in linear units
     thres_factor_cx = 2.0 # false | factor in linear units
 
+
 [kazr_mosaic] 
     location = "MOSAiC" 
     shortname = "kazrmosaic" 
     loader = 'kazr_new'
 [kazr_mosaic.settings] 
-    #grid_time = 6 
+    grid_time = false
     max_no_nodes = 15 
-    LDR = false 
     station_altitude = 22
+    polarimetry = 'false' # 'LDR' | 'STSR' | 'false'
+    smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
+    #add_to_fname = '_rectwin'
 [kazr_mosaic.settings.peak_finding_params]
     #vel_smooth = true
-    vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
-    thres_factor_co = 2.0 # false | factor in linear units
-    thres_factor_cx = 2.0 # false | factor in linear units
+    #vel_smooth = [0.14705882, 0.20588235, 0.29411765, 0.20588235, 0.14705882]
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 3.2 # now m/s (6.56 m/s)
+    # supress spurious peaks introduced by tails; back to 3 as the other tail filter should work better
+    thres_factor_co = 2.5 # false | factor in linear units
+    thres_factor_cx = 3.5 # false | factor in linear units
+    # 1dB calibration offset following Griesche and Matrosov
+    cal_offset = 1        # dB
+    tail_filter = false    # true | false | omit; only tested with LACROS-Mira 
+    # new: seconds instead of index
+    t_avg = 7             # s
+    h_avg = 0             # m
+    span = 0.4            # m s-1
+    smooth_polyorder = 2  # 0 deactivate | 2 second order
+    prom_thres = 1.0      # dB
+    width_thres = 0.1     # m s-1
+
 
 [mwacr_mosaic] 
     location = "MOSAiC" 
@@ -171,7 +188,7 @@
 [joyrad_nya] 
     location = "Ny-Alesund" 
     shortname = "joyrad_nya"
-    loader = 'rpg'
+    loader = 'rpgpy'
 [joyrad_nya.settings]
     grid_time = false
     tot_spec_scaling = 0.5 # software version = 5.25
@@ -238,8 +255,8 @@
     thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
     t_avg = 0            # s
-    h_avg = 89          # m
-    span = 0.2          # m s-1
+    h_avg = 89           # m
+    span = 0.2           # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
@@ -247,9 +264,9 @@
     roll_velocity = 2     # m/s from the right of the spec
     thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
-    t_avg = 9           # s
+    t_avg = 9            # s
     h_avg = 0            # m
-    span = 0.25           # m s-1
+    span = 0.25          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
@@ -281,7 +298,7 @@
     thres_factor_cx = 1.5 # false | factor in linear units
     # new: seconds instead of index
     t_avg = 0            # s
-    h_avg = 89          # m
+    h_avg = 89           # m
     span = 0.25          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
@@ -290,9 +307,9 @@
     roll_velocity = 2     # m/s from the right of the spec
     thres_factor_co = false # false | factor in linear units
     thres_factor_cx = 1.5 # false | factor in linear units
-    t_avg = 9           # s
+    t_avg = 9            # s
     h_avg = 0            # m
-    span = 0.25           # m s-1
+    span = 0.25          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
@@ -306,10 +323,44 @@
     prom_thres = 0.0     # dB
     width_thres = 0      # m s-1
 
+
+[rpg94_eri] 
+    location = "Eriswil"
+    shortname = "Eri"
+    loader = 'rpg'
+[rpg94_eri.settings] 
+    grid_time = false
+    max_no_nodes = 15 
+    tot_spec_scaling = 1
+    polarimetry = 'STSR' 
+    smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
+    decoupling = -30
+    station_altitude = 22
+[rpg94_eri.settings.peak_finding_params.chirp0]
+    thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 3 # false | factor in linear units
+    # new: seconds instead of index
+    t_avg = 9            # s
+    #h_avg = 89          # m
+    h_avg = 0            # m
+    span = 0.35          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 0.8     # dB
+    width_thres = 0      # m s-1
+[rpg94_eri.settings.peak_finding_params.chirp1]
+    thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 3 # false | factor in linear units
+    t_avg = 9            # s
+    h_avg = 0            # m
+    span = 0.30          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 0.8     # dB
+    width_thres = 0      # m s-1
+[rpg94_eri.settings.peak_finding_params.chirp2]
     thres_factor_co = false # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m
-    span = 0.2           # m s-1
+    span = 0.25          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.0     # dB
     width_thres = 0      # m s-1

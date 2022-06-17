@@ -100,6 +100,10 @@ def flatten(xs):
         result.append(xs)
     return result
 
+def filter_none_rec(e):
+    """filter None values from nested list"""
+    return list(filter(None, [filter_none_rec(y) for y in e])) if isinstance(e, list) else e
+
 @jit(nopython=True, fastmath=True)
 def gauss_func(x, m, sd):
     """calculate the gaussian function on a given grid
@@ -132,7 +136,7 @@ def gauss_fit(x, y):
     return popt, pcov
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=False, fastmath=True)
 def estimate_noise(spec, mov_avg=1):
     """
     Noise estimate based on Hildebrand and Sekhon (1974)

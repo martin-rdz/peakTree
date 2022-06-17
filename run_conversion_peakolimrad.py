@@ -10,6 +10,7 @@ import datetime
 #import sys, os
 import peakTree
 import peakTree.helpers as h
+import gc
 
 import logging
 log = logging.getLogger('peakTree')
@@ -44,3 +45,33 @@ pTB.assemble_time_height('output/', fname_system=True)
 pTB = peakTree.peakTreeBuffer(system='limrad_peako')
 pTB.load('data/210319_140002_P05_ZEN.LV0', load_to_ram=True)
 pTB.assemble_time_height('output/', fname_system=True)
+
+# pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+# pTB.load('data/rpg94_lacros/220220_020002_P02_ZEN.LV0', load_to_ram=True)
+# pTB.assemble_time_height('output/', fname_system=True)
+# del(pTB); gc.collect()
+# 
+# pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+# pTB.load('data/rpg94_lacros/220220_050003_P02_ZEN.LV0', load_to_ram=True)
+# pTB.assemble_time_height('output/', fname_system=True)
+# del(pTB); gc.collect()
+
+#pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+#pTB.load('data/rpg94_lacros/220221_020000_P02_ZEN.LV0', load_to_ram=True)
+#pTB.assemble_time_height('output/', fname_system=True)
+#del(pTB); gc.collect()
+
+# pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+# pTB.load('data/rpg94_lacros/220225_030002_P02_ZEN.LV0', load_to_ram=True)
+# pTB.assemble_time_height('output/', fname_system=True)
+# del(pTB); gc.collect()
+# 
+# pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+# pTB.load('data/rpg94_lacros/220302_120000_P02_ZEN.LV0', load_to_ram=True)
+# pTB.assemble_time_height('output/', fname_system=True)
+# del(pTB); gc.collect()
+# 
+# pTB = peakTree.peakTreeBuffer(system='rpg94_eri')
+# pTB.load('data/rpg94_lacros/220226_080003_P02_ZEN.LV0', load_to_ram=True)
+# pTB.assemble_time_height('output/', fname_system=True)
+# del(pTB); gc.collect()
