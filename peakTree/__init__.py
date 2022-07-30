@@ -389,8 +389,18 @@ class peakTreeBuffer():
             self.indices = self.f.variables['spectrum_index'][:]
             self.spectra = self.f.variables['radar_power_spectrum_of_copolar_h'][:]
 
+
     def load_rpgbinary_spec(self, filename, load_to_ram=False):
         """load the rpg binary (.LV0) file directly; requires rpgpy
+
+
+        Args:
+            filename: path to file
+            load_to_ram (optional False)
+
+
+        2022-07-25: reimplemented the polarimetry based on sldr_bulk_revised-seeding_case.ipynb
+                    and the communication with A. Myagkov
 
         developed with rpgpy version 0.10.2
         """
@@ -421,11 +431,25 @@ class peakTreeBuffer():
         log.debug(f'velocity shape {self.velocity.shape}')
 
         self.chirp_start_indices = header['RngOffs']
-        self.n_samples_in_chirp = header['SpecN'][:]
         self.no_chirps = self.chirp_start_indices.shape[0]
         log.debug(f'chirp_start_indices {self.chirp_start_indices}')
         bins_per_chirp = np.diff(np.hstack((self.chirp_start_indices, self.range.shape[0])))
         log.debug(f'range bins per chirp {bins_per_chirp} {bins_per_chirp.shape}')
+        # previously named n_samples_in_chirp
+        self.doppFFT = header['SpecN'][:]
+        self.rangeFFT = header['ChirpFFTSize'][:]
+        self.no_avg = header['ChirpReps'][:]
+        self.no_avg_subs = (2 * self.no_avg/self.doppFFT - 1) * (2 * self.rangeFFT -1)
+        print((self.timestamps.shape[0], self.range.shape[0]))
+        self.no_avg_subs_3d = np.broadcast_to(
+            np.repeat(self.no_avg_subs, bins_per_chirp)[np.newaxis, :, np.newaxis], 
+            (self.timestamps.shape[0], self.range.shape[0], np.max(self.doppFFT)))
+        self.no_avg_subs_2d = np.broadcast_to(
+            np.repeat(self.no_avg_subs, bins_per_chirp)[np.newaxis, :], 
+            (self.timestamps.shape[0], self.range.shape[0]))
+
+        self.Q = header['NoiseFilt']
+
         self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp)
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
@@ -437,9 +461,8 @@ class peakTreeBuffer():
         if load_to_ram == True:
             self.spectra_in_ram = True
             #print(type(data['TotSpec']), data['TotSpec'])
-            self.doppler_spectrum = data['TotSpec']
-            spec_mask = self.doppler_spectrum == 0.0
-            self.doppler_spectrum = scaling*self.doppler_spectrum
+            self.spec_tot = data['TotSpec']
+            self.spec_tot = scaling*self.spec_tot
 
             # TODO: Check distinction between STSR and SP radar: For STSR, VNoisePow is stored in the "TotNoisePow"
             #  variable (this is a problem in rpgpy with variable naming). VNoisePow and HNoisePow have to be added up
@@ -451,57 +474,48 @@ class peakTreeBuffer():
 
             if self.settings['polarimetry'] == 'STSR':
                 # possibly missing scaling factor here:
-                self.integrated_noise = data['TotNoisePow'] + data['HNoisePow'] if 'TotNoisePow' in data else \
-                h.estimate_noise_array(self.doppler_spectrum)*np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                self.doppler_spectrum_h = data['HSpec']
-                spec_h_mask = self.doppler_spectrum_h == 0.0
-                self.covariance_spectrum_re = data['ReVHSpec']
-                cov_re_mask = self.covariance_spectrum_re == 0.0
-                self.covariance_spectrum_im = data['ImVHSpec']
-                cov_im_mask = self.covariance_spectrum_im == 0.0
-                self.spectral_mask = (spec_mask | spec_h_mask | cov_re_mask | cov_im_mask)
-                #self.integrated_noise_h = data['HNoisePow']
-                self.doppler_spectrum_v = 4 * self.doppler_spectrum - self.doppler_spectrum_h - 2 * self.covariance_spectrum_re
-                #noise_v = data['TotNoisePow']  # * scaling ?
-
-                #print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
-                #self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                #print(self.noise_h_per_bin.shape)
-                #self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-
-                # updated noise
-                self.navg = (2*header['ChirpFFTSize']*header['ChirpReps'])/(header['SpecN'])-1
-                self.noise_lvl = self.integrated_noise/\
-                            (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                #if 'TotNoisePow' in data:
-                #    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                #    self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                #else:
-                #    # option for spectra files for which no noise power variable is saved - untested!
-                #    self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
-                #    self.noise_tot = self.noise_lvl - self.noise_h
-
                 if 'TotNoisePow' in data:
-                    self.noise_lvl = (data['TotNoisePow']+data['HNoisePow'])/\
-                                (2*np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                    self.noise_tot = data['TotNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                    self.noise_h = data['HNoisePow']/np.repeat(self.n_samples_in_chirp, bins_per_chirp)
+                    self.noise_v = data['TotNoisePow'] 
                 else:
-                    # option for spectra files for which no noise power variable is saved - untested!
-                    self.noise_h = h.estimate_noise_array(self.doppler_spectrum_h)
-                    self.noise_tot = self.noise_lvl - self.noise_h
-                Q = 6
-                self.noise_thres = Q*self.noise_lvl/np.repeat(np.sqrt(self.navg), bins_per_chirp)
+                    self.noise_v = h.estimate_noise_array(self.spec_tot)
+                self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp) 
+                self.noise_h = data['HNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
+
+                self.spec_h = data['HSpec']
+                self.spec_cov_re = data['ReVHSpec']
+                self.spec_cov_im = data['ImVHSpec']
+                self.spec_v = 4 * self.spec_tot - self.spec_h - 2 * self.spec_cov_re
+
+                self.noise_v_3d = np.repeat(self.noise_v[:,:,np.newaxis], np.max(self.doppFFT), axis=2)
+                self.noise_h_3d = np.repeat(self.noise_h[:,:,np.newaxis], np.max(self.doppFFT), axis=2)
+                self.noise_combined_3d = (self.noise_v_3d + self.noise_h_3d) / 2
+                self.noise_combined = (self.noise_v + self.noise_h) / 2
+                sv = self.spec_v.copy()
+                sv += self.noise_v_3d
+                sh = self.spec_h.copy()
+                sh += self.noise_h_3d
+
+                self.rhv_2d = np.abs(self.spec_cov_re + 1j * self.spec_cov_im) / np.sqrt(sv * sh)
+
+                self.specZ_2d = (sv + sh)*(1+self.rhv_2d) / 2 - self.noise_combined_3d
+                self.specZcx_2d = (sv + sh)*(1-self.rhv_2d) / 2 - self.noise_combined_3d
+
+                self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
+                self.specZcx_2d_mask = (self.specZ_2d <= 1e-10) | (self.specZcx_2d <= 1e-10)
+
+                self.noise_thres_2d = self.Q*self.noise_combined/np.sqrt(self.no_avg_subs_2d)
 
             elif self.settings['polarimetry'] == 'false':
-                self.integrated_noise = data['TotNoisePow'] if 'TotNoisePow' in data else \
-                    h.estimate_noise_array(self.doppler_spectrum)*np.repeat(self.n_samples_in_chirp, bins_per_chirp)
-                self.spectral_mask = spec_mask
+                if 'TotNoisePow' in data:
+                    self.noise_v = data['TotNoisePow'] 
+                else:
+                    self.noise_v = h.estimate_noise_array(self.spec_tot)
+                self.specZ_2d = self.spec_tot
+                self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
                 # here another option for polarimetry = 'LDR' needs to be added
 
-            #self.integ_noise_per_bin = (self.integrated_noise/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-            #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
-
+        else:
+            raise ValueError('load_to_ram = False not implemented yet')
 
 
     def load_rpgpy_spec(self, filename, load_to_ram=False):
@@ -795,8 +809,11 @@ class peakTreeBuffer():
             #specSNRco = np.ma.masked_equal(specSNRco, 0)
             #noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
             noise_thres_old = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            if not self.spectra_in_ram:
+                noise_thres = noise_thres_old
             # alternate fit estimate for the problematic mira spectra 
-            noise_thres = 1e-25 if empty_spec else np.nanmin(specZ_2d[specZ_2d > 0])*peak_finding_params['thres_factor_co']
+            else:
+                noise_thres = 1e-25 if empty_spec else np.nanmin(specZ_2d[specZ_2d > 0])*peak_finding_params['thres_factor_co']
             print(f'noise est {h.lin2z(noise_thres_old):.2f} -> {h.lin2z(noise_thres):.2f}')
 
             velocity = self.velocity.copy()
@@ -817,11 +834,11 @@ class peakTreeBuffer():
 
             # for noise separeated peaks 0 is a better fill value
             if type(tail_filter) == list:
-                log.warning('tail filter applied')
                 noise_tail = h.gauss_func_offset(velocity, *tail_filter)
+                log.warning(f'tail filter applied {tail_filter}')
                 specZ[specZ < h.z2lin(noise_tail + 4)] = np.nan
                 tail_filter_applied = True
-                print('tail filter applied, ', tail_filter_applied, tail_filter)
+                #print('tail filter applied, ', tail_filter_applied, tail_filter)
             else:
                 tail_filter_applied = False
         
@@ -833,7 +850,8 @@ class peakTreeBuffer():
                 specZ = scipy.signal.savgol_filter(specZ, window_length, 
                             polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
-            specZ[gaps] = specZ_raw[gaps]
+            # this collides with the tail filter
+            #specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             
@@ -881,9 +899,8 @@ class peakTreeBuffer():
 
             #                                     deep copy of dict 
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params, gaps=gaps)
             #travtree = {}
-            
 
             if (travtree 
                  and 'tail_filter' in peak_finding_params
@@ -894,7 +911,7 @@ class peakTreeBuffer():
             if (travtree 
                  and 'tail_filter' in peak_finding_params
                  and peak_finding_params['tail_filter'] is True
-                 and h.lin2z(travtree[0]['z']) > -7 
+                 and h.lin2z(travtree[0]['z']) > -3 
                  #and travtree[0]['width'] < 0.22 and not tail_filter_applied):
                  #and travtree[0]['width'] < 0.31 
                  and no_ind * vel_step > 9 * travtree[0]['width'] 
@@ -1220,8 +1237,8 @@ class peakTreeBuffer():
         elif self.type == 'rpgpy':
             
             # average_spectra step
-            spec_chunk = self.doppler_spectrum[it_slicer, ir_slicer, :]
-            mask_chunk = self.spectral_mask[it_slicer,ir_slicer,:]
+            spec_chunk = self.specZ_2d[it_slicer, ir_slicer, :]
+            mask_chunk = self.specZ_2d_mask[it_slicer,ir_slicer,:]
             no_averages = np.prod(spec_chunk.shape[:-1])
             specZ = np.average(spec_chunk, axis=(0,1))
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
@@ -1229,53 +1246,11 @@ class peakTreeBuffer():
 
             # some parallel processing for debugging
             if self.settings['polarimetry'] == 'STSR':
-                spec_v_chunk = self.doppler_spectrum_v[it_slicer,ir_slicer,:]
-                specZv = np.average(spec_v_chunk, axis=(0, 1))
-                spec_h_chunk = self.doppler_spectrum_h[it_slicer,ir_slicer,:]
-                cov_re_chunk = self.covariance_spectrum_re[it_slicer,ir_slicer,:]
-                cov_im_chunk = self.covariance_spectrum_im[it_slicer,ir_slicer,:]
-                #rhv_chunk = self.rhv[it_slicer,ir_slicer,:]
-                #noise_h_bin = self.noise_h_per_bin[it_slicer,ir_slicer]
-                #noise_v_bin = self.noise_v_per_bin[it_slicer,ir_slicer]
-                n_lvl = np.average(self.noise_lvl[it_slicer, ir_slicer], axis=(0,1))
-                n_tot = np.average(self.noise_tot[it_slicer, ir_slicer], axis=(0,1))
-                n_h = np.average(self.noise_h[it_slicer, ir_slicer], axis=(0,1))
+                spec_cx_chunk = self.specZcx_2d[it_slicer,ir_slicer,:]
+                specZcx = np.average(spec_cx_chunk, axis=(0, 1))
 
-                #rhv_chunk = np.abs(cov_re_chunk + 1j * cov_im_chunk) / np.sqrt(
-                #    (spec_v_chunk + noise_v_bin[:,:,np.newaxis]) * (spec_h_chunk + noise_h_bin[:,:,np.newaxis]))
-                rhv_chunk = np.abs(cov_re_chunk + 1j * cov_im_chunk) / np.sqrt(
-                    (spec_v_chunk + n_tot) * (spec_h_chunk + n_h))
-                #print('v values lt 0', np.any(0 > (spec_v_chunk + noise_v_bin[:,:,np.newaxis])))
-                #print('h values lt 0', np.any(0 > (spec_h_chunk + noise_h_bin[:,:,np.newaxis])))
-
-                # using the myagkov formula and (traditional) masking
-                specZcx_chunk = (spec_h_chunk + spec_v_chunk)*(1-rhv_chunk) - n_lvl
-                specZco_chunk = (spec_h_chunk + spec_v_chunk)*(1+rhv_chunk) - n_lvl
-                # the Galetti formula does not like rhos larger 1.0 (those give LDRs < 0)
-                #specLDRmasked[specRhv <= 0.8] = np.nan #(R_hv gives a LDR of -9.5dB)
-                #specLDRmasked[specRhv <= 0.93] = np.nan #(R_hv gives a LDR of -14.4dB)
-                rhv_mask = ((rhv_chunk < 0.93) | (rhv_chunk >= 1.0) | mask_chunk)
-                specRhv_mask = np.all(rhv_mask, axis=(0,1))
-
-                specZv = np.average(spec_v_chunk, axis=(0,1))
-                specZh = np.average(spec_h_chunk, axis=(0,1))
-                specZcx = np.average(specZcx_chunk, axis=(0,1))
-                specZco = np.average(specZco_chunk, axis=(0,1))
-                #cov_re = np.average(cov_re_chunk, axis=(0,1))
-                #cov_im = np.average(cov_im_chunk, axis=(0,1))
-                #rhv = np.average(rhv_chunk, axis=(0,1))
-
-                if isinstance(rhv_chunk, np.ma.MaskedArray):
-                    specRhv = np.average(rhv_chunk, axis=(0,1)).filled(np.nan)
-                else:
-                    specRhv = np.average(rhv_chunk, axis=(0,1))
-
-                #print(specRhv.tolist())
-                #print(specRhv_mask.tolist())
-                #specLDR = np.average(specLDR_chunk, axis=(0,1))
-                #print('spec_ldr', 10*np.log10(specLDR))
-                assert not isinstance(specZv, np.ma.core.MaskedArray), "Zv not np.ndarray"
-                assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
+                assert not isinstance(specZcx, np.ma.core.MaskedArray), "Zv not np.ndarray"
+                #assert not isinstance(specRhv, np.ma.core.MaskedArray), "Rhv not np.ndarray"
 
             #specLDR = np.average(specLDR_chunk, axis=(0,1))
             mask = np.all(mask_chunk, axis=(0,1))
@@ -1297,14 +1272,9 @@ class peakTreeBuffer():
             #noise_thres = noise_h*3
             if ('thres_factor_co' in peak_finding_params
                     and peak_finding_params['thres_factor_co']):
-                noise_thres = peak_finding_params['thres_factor_co'] * np.average(self.noise_thres[it_slicer, ir_slicer], axis=(0,1))
+                noise_thres = peak_finding_params['thres_factor_co'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
             else:
-                noise_thres =  np.average(self.noise_thres[it_slicer, ir_slicer], axis=(0,1))
-
-            if len(specZ[~mask]) > 0:
-                print('noise thres different from min ', 
-                      h.lin2z(np.min(specZ[~mask])) - h.lin2z(n_lvl),    
-                      n_lvl/np.min(specZ[~mask]))    
+                noise_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
@@ -1318,9 +1288,9 @@ class peakTreeBuffer():
                 if self.settings['polarimetry'] == 'STSR':
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
                                       #[specZ, specZv, specRhv, mask])
-                                      [specZ, specZh, specZv, specRhv, mask])
+                                      [specZ, specZcx, mask])
                     #specZ, specZv, specRhv, mask = upck[1]
-                    specZ, specZh, specZv, specRhv, mask = upck[1]
+                    specZ, specZcx, mask = upck[1]
                 elif self.settings['polarimetry'] == 'false':
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
                                           [specZ, mask])
@@ -1349,7 +1319,7 @@ class peakTreeBuffer():
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             
             # TODO add for other versions
-            specZ_mask = (specZ == 0.) | mask | (specZ < noise_thres) | ~np.isfinite(specZ)
+            specZ_mask = (specZ <= 1e-10) | mask | (specZ < noise_thres) | ~np.isfinite(specZ)
             #specZ_mask = (specZ < noise_thres) | ~np.isfinite(specZ)
             # otherwise peak finding identifies fully masked subpeaks
             specZ[specZ_mask] = np.nan  
@@ -1359,38 +1329,18 @@ class peakTreeBuffer():
 
             # also SNR
             if self.settings['polarimetry'] == 'STSR':
-                specSNRco = specZ/n_h
-                specSNRco_mask = specZ_mask.copy()
-                log.info(f"noise_h {h.lin2z(n_h):5.3f}  noise_v {h.lin2z(n_tot):5.3f}" + \
-                         f" noise_mean {h.lin2z(n_lvl):5.3f} noise_thres {h.lin2z(noise_thres):5.3f}")
-
-                # for the SLDR radar this is a rather hypothetical quantity
-                #specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
-                specSNRv = specZv/n_tot
-                #print('SNRcx', h.lin2z(specSNRcx))
-                #print('SNRco', h.lin2z(specSNRco))
-                #print('SNRv', specSNRv)
-                #print('SNRco', specSNRco)
-                #print('LDR masks', (specSNRv < 300) , (specSNRco < 300) , (specZ_mask))
-                #specRhv_mask = ((specSNRv < 200) | (specSNRco < 200) | specZ_mask)
-                #specRhv_mask = ((specSNRv < 100) | (specSNRco < 100) | specZ_mask)
-                	    
-                specRhvmasked = specRhv.copy()
-                specRhvmasked[specRhv_mask] = np.nan
-
                 #specZcx_masked = specZcx.copy()
                 if ('thres_factor_cx' in peak_finding_params
                         and peak_finding_params['thres_factor_cx']):
-                    noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_thres[it_slicer, ir_slicer], axis=(0,1))
+                    noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
                 else:
-                    noise_cx_thres =  np.average(self.noise_thres[it_slicer, ir_slicer], axis=(0,1))
-                noise_cx_thres += n_lvl
+                    noise_cx_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
                 
-                specZcx_mask = (specRhv_mask | (specZcx < noise_cx_thres))
+                specZcx_mask = (specZcx <= 1e-10) | ~np.isfinite(specZcx) | (specZcx < noise_cx_thres)
                 log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
                 trust_ldr_mask = specZcx_mask | specZ_mask
 
-                specLDR = (specZcx)/(specZco)
+                specLDR = (specZcx)/(specZ)
                 specLDRmasked = specLDR.copy()
                 specLDRmasked[trust_ldr_mask] = np.nan
 
@@ -1405,16 +1355,11 @@ class peakTreeBuffer():
                     'specZ': specZ, 'noise_thres': noise_thres,
                     'specZ_mask': specZ_mask,
                     'specZ_raw': specZ_raw,
-                    #'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
+                    'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
                     #'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
-                    'specRhv': specRhv, 'specRhv_mask': specRhv_mask,
-                    'specRhvmasked': specRhvmasked,
                     'no_temp_avg': no_averages,
-                    'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
-                    'specSNRv': specSNRv, 
-
-                    'specZco': specZco,
-                    'specZcx': specZcx, 'noise_cx_thres': noise_cx_thres, 
+                    #'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                    'noise_cx_thres': noise_cx_thres, 
                     'trust_ldr_mask': trust_ldr_mask,
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
                     #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,

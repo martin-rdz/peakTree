@@ -63,7 +63,7 @@
     span = 0.3            # m s-1
     smooth_polyorder = 2  # 0 deactivate | 2 second order
     prom_thres = 0.5      # dB
-    width_thres = 0.05    # m s-1
+    width_thres = 0.1    # m s-1
 
 
 [Polarstern]
@@ -334,11 +334,11 @@
     tot_spec_scaling = 1
     polarimetry = 'STSR' 
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
-    decoupling = -30
+    decoupling = -28.5
     station_altitude = 22
 [rpg94_eri.settings.peak_finding_params.chirp0]
     thres_factor_co = false # false | factor in linear units
-    thres_factor_cx = 3 # false | factor in linear units
+    thres_factor_cx = 4 # false | factor in linear units
     # new: seconds instead of index
     t_avg = 9            # s
     #h_avg = 89          # m
@@ -349,8 +349,8 @@
     width_thres = 0      # m s-1
 [rpg94_eri.settings.peak_finding_params.chirp1]
     thres_factor_co = false # false | factor in linear units
-    thres_factor_cx = 3 # false | factor in linear units
-    t_avg = 9            # s
+    thres_factor_cx = 4 # false | factor in linear units
+    t_avg = 0            # s
     h_avg = 0            # m
     span = 0.30          # m s-1
     smooth_polyorder = 2

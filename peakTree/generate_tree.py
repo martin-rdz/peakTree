@@ -343,7 +343,11 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #print('ldrmax ', h.lin2z(spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max-1:ind_max+2]), bounds, ind_max)
     #print('Zcx_validcx', spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1], spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1])
     if not np.all(spectrum['trust_ldr_mask']):
-        ldr2 = np.nanmean(spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+        #ldr2 = np.nanmean(spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
+        trust_ldr = spectrum['trust_ldr_mask'][bounds[0]:bounds[1]+1]
+        Zcx = spectrum['specZcx'][bounds[0]:bounds[1]+1]
+        Zco = spectrum['specZ'][bounds[0]:bounds[1]+1]
+        ldr2 = np.sum(Zcx[~trust_ldr])/np.sum(Zco[~trust_ldr])
         #ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum()/(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
     else:
         ldr2 = np.nan
