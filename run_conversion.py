@@ -49,11 +49,30 @@ pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
 #pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
 #pTB.load_spec_file('data/D20190911_T0300_0400_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
 #pTB.load_spec_file('data/D20190313_T0800_0900_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
-pTB.load_spec_file('data/D20190711_T1100_1200_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
-pTB.assemble_time_height('output/')
+pTB.load_spec_file('data/NMRA/20190711/D20190711_T1100_1200_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
+pTB.assemble_time_height('output/NMRA/20190711/')
+
+
+pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
+pTB.load_spec_file('data/NMRA/20190711/D20190711_T0700_0800_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
+pTB.assemble_time_height('output/NMRA/20190711/')
+
+
+pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
+pTB.load_spec_file('data/NMRA/20190711/D20190711_T0800_0900_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
+pTB.assemble_time_height('output/NMRA/20190711/')
+
+
+pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
+pTB.load_spec_file('data/NMRA/20190711/D20190711_T0900_1000_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
+pTB.assemble_time_height('output/NMRA/20190711/')
+
+pTB = peakTree.peakTreeBuffer(system='Lacros_Pun')
+pTB.load_spec_file('data/NMRA/20190711/D20190711_T1000_1100_Pun_zspc2nc_v2.0_standard.nc4', load_to_ram=True)
+pTB.assemble_time_height('output/NMRA/20190711/')
+
+
 exit()
-
-
 path = 'data/'
 files = os.listdir(path)
 valid_time = ['20190711', '20190713']
