@@ -3,7 +3,6 @@
 
 import datetime
 import os
-import re
 #import matplotlib
 #matplotlib.use('Agg')
 #import numpy as np
@@ -32,9 +31,8 @@ date = datetime.datetime.strptime(args.date, '%Y%m%d')
 path = 'data/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
 
 files = os.listdir(path)
-files = [f for f in files if ('.nc' in f or '.cdf' in f)]
+files = [f for f in files if '.nc' in f]
 print(files)
-#files = [f for f in files if int(re.findall("T(\d*)", f)[0]) > 1300]
 
 outpath = 'output/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
 if not os.path.isdir(outpath):
@@ -44,16 +42,16 @@ if not os.path.isdir(outpath):
 pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system=args.config)
 
 # filter for patrics test
-#files = [f for f in files if "ldrcorr" in f]
-if args.config == 'Lacros_Pun':
-    #files = [f for f in files if "T1300_" in f]
-    files = [f for f in files if "v2.0" in f]
+files = [f for f in files if "T1300_" in f]
+files = [f for f in files if "v2.0" in f]
+print(files)
 
-print('doing only ', files)
-
-for f in sorted(files)[:]:
+for f in files[:]:
     print('now doing ', f)
-    pTB.load(path+f, load_to_ram=True)
+    if args.config == 'kazr_mosaic':
+        pTB.load_newkazr_file(path+f, load_to_ram=True)
+    else:
+        pTB.load_spec_file(path+f, load_to_ram=True)
     pTB.assemble_time_height(outpath)
 
 

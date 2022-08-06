@@ -19,6 +19,26 @@
     span = 0.1
     smooth_polyorder = 1
 
+[Lacros_Lei]
+    location = "Leipzig"
+    shortname = "Lei"
+    loader = 'mira'
+[Lacros_Lei.settings]
+    decoupling = -30
+    grid_time = 6
+    max_no_nodes = 15
+    LDR = true
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 98 # = 6.56 m/s
+    station_altitude = 100
+    #add_to_fname = '_rectwin'
+[Lacros_Lei.settings.peak_finding_params]
+    #vel_smooth = [0.2,0.2,0.2,0.2,0.2]
+    #vel_smooth = [0.33,0.33,0.33]
+    thres_factor_co = 6.0 # supress spurious peaks introduced by tails
+    thres_factor_cx = 3.0
+    span = 0.1
+    smooth_polyorder = 1
 
 [Lacros_at_ACCEPT]
     location = "Cabauw"
@@ -40,7 +60,7 @@
 [Lacros_Pun]
     location = "Punta Arenas"
     shortname = "Pun"
-    loader = "mira"
+    loader = 'mira'
 [Lacros_Pun.settings]
     decoupling = -30
     grid_time = 7
@@ -58,12 +78,12 @@
     cal_offset = 0        # dB
     tail_filter = true    # true | false | omit; only tested with LACROS-Mira 
     # new: seconds instead of index
-    t_avg = 5             # s
+    t_avg = 6             # s
     h_avg = 0             # m
-    span = 0.3            # m s-1
+    span = 0.2            # m s-1
     smooth_polyorder = 2  # 0 deactivate | 2 second order
-    prom_thres = 0.5      # dB
-    width_thres = 0.1    # m s-1
+    prom_thres = 1.0      # dB
+    width_thres = 0.0     # m s-1
 
 
 [Polarstern]
@@ -362,5 +382,5 @@
     h_avg = 0            # m
     span = 0.25          # m s-1
     smooth_polyorder = 2
-    prom_thres = 0.0     # dB
+    prom_thres = 0.5     # dB
     width_thres = 0      # m s-1

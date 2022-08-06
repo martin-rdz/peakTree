@@ -27,55 +27,26 @@ parser.add_argument('--config', help='config entry to use', default='Lacros_Pun'
 args = parser.parse_args()
 date = datetime.datetime.strptime(args.date, '%Y%m%d')
 
-#date = datetime.datetime(2019, 2, 3)
-
-path = 'data/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
+path = f"data/{args.instrument}/Y{date.strftime('%Y')}/M{date.strftime('%m')}/D{date.strftime('%d')}/"
 
 files = os.listdir(path)
-files = [f for f in files if ('.nc' in f or '.cdf' in f)]
+files = [f for f in files if ('.LV0' in f[-4:])]
 print(files)
 #files = [f for f in files if int(re.findall("T(\d*)", f)[0]) > 1300]
+#files = [f for f in files if int(re.findall("_(\d*)_", f)[0]) < 60000]
 
-outpath = 'output/{}/{}/'.format(args.instrument, date.strftime('%Y%m%d'))
+outpath = f"output/{args.instrument}/{date.strftime('%Y%m%d')}/"
 if not os.path.isdir(outpath):
     print('create output path ', outpath)
     os.mkdir(outpath)
 
 pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system=args.config)
 
-# filter for patrics test
-#files = [f for f in files if "ldrcorr" in f]
-if args.config == 'Lacros_Pun':
-    #files = [f for f in files if "T1300_" in f]
-    files = [f for f in files if "v2.0" in f]
-
 print('doing only ', files)
 
 for f in sorted(files)[:]:
-    print('now doing ', f)
+    print('now doing ', f, outpath)
     pTB.load(path+f, load_to_ram=True)
     pTB.assemble_time_height(outpath)
 
 
-exit()
-
-
-
-pTB = peakTree.peakTreeBuffer(config_file='instrument_config.toml', system='Lacros_Pun')
-pTB.load_spec_file('data/D20190317_T0600_0700_Pun_zspc2nc_v1_02_standard.nc4', load_to_ram=True)
-pTB.assemble_time_height('output/')
-exit()
-
-
-path = 'data/'
-files = os.listdir(path)
-valid_time = ['20190711', '20190713']
-print('total no files in ', path, ' : ', len(files))
-files = [path+f for f in files if f[1:9] >= valid_time[0] and f[1:9] <= valid_time[1]]
-files = sorted(files)
-print('files selected', len(files))
-
-for f in files:
-    pTB = peakTree.peakTreeBuffer(system='Lacros_at_ACCEPT')
-    pTB.load_spec_file(f)
-    pTB.assemble_time_height('output/')
