@@ -80,9 +80,9 @@
     # new: seconds instead of index
     t_avg = 6             # s
     h_avg = 0             # m
-    span = 0.2            # m s-1
+    span = 0.3            # m s-1
     smooth_polyorder = 2  # 0 deactivate | 2 second order
-    prom_thres = 1.0      # dB
+    prom_thres = 0.3      # dB
     width_thres = 0.0     # m s-1
 
 
@@ -168,10 +168,10 @@
     # new: seconds instead of index
     t_avg = 7             # s
     h_avg = 0             # m
-    span = 0.4            # m s-1
+    span = 0.2            # m s-1
     smooth_polyorder = 2  # 0 deactivate | 2 second order
-    prom_thres = 1.0      # dB
-    width_thres = 0.1     # m s-1
+    prom_thres = 0.2      # dB
+    width_thres = 0.0     # m s-1
 
 
 [mwacr_mosaic] 

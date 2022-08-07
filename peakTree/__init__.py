@@ -21,6 +21,7 @@ from . import print_tree
 from . import generate_tree
 import toml
 import scipy
+from loess.loess_1d import loess_1d
 
 log = logging.getLogger(__name__)
 # log.setLevel(logging.DEBUG)
@@ -847,8 +848,22 @@ class peakTreeBuffer():
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             if peak_finding_params['smooth_polyorder'] != 0:
-                specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+                specZ = h.lin2z(specZ)
+                if peak_finding_params['smooth_polyorder'] < 10:
+                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                                polyorder=peak_finding_params['smooth_polyorder'], 
+                                mode='nearest')
+                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
+                    if indices:
+                        _, specZ, _ = loess_1d(velocity, specZ, 
+                                    degree=peak_finding_params['smooth_polyorder']-10, 
+                                    npoints=window_length)
+                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
+                    window = h.gauss_func(np.arange(11), 5, window_length)
+                    specZ = np.convolve(specZ, window, mode='same')
+                else:
+                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
+                specZ = h.z2lin(specZ)
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
             # this collides with the tail filter
             #specZ[gaps] = specZ_raw[gaps]
@@ -899,7 +914,9 @@ class peakTreeBuffer():
 
             #                                     deep copy of dict 
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params, gaps=gaps)
+            travtree = generate_tree.tree_from_spectrum_peako(
+                #{**spectrum}, peak_finding_params, gaps=gaps) 
+                {**spectrum}, peak_finding_params, gaps=None) 
             #travtree = {}
 
             if (travtree 
@@ -1108,9 +1125,11 @@ class peakTreeBuffer():
                     specZ = np.full((1, 1, self.velocity.shape[0]), h.z2lin(-70))
             else: 
                 indices = self.f.variables['spectrum_index'][it_slicer,ir_slicer].tolist()
+                print(indices)
                 indices = h.filter_none_rec(indices)
+                print(indices)
                 if indices:
-                    specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][indices,:])
+                    specZ = h.z2lin(self.f.variables['radar_power_spectrum_of_copolar_h'][:][indices,:])
                 else:
                     #empty spectrum
                     specZ = np.full((1, 1, self.velocity.shape[0]), h.z2lin(-70))
@@ -1153,8 +1172,22 @@ class peakTreeBuffer():
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             if peak_finding_params['smooth_polyorder'] != 0:
-                specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+                specZ = h.lin2z(specZ)
+                if peak_finding_params['smooth_polyorder'] < 10:
+                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                                polyorder=peak_finding_params['smooth_polyorder'], 
+                                mode='nearest')
+                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
+                    if indices:
+                        _, specZ, _ = loess_1d(velocity, specZ, 
+                                    degree=peak_finding_params['smooth_polyorder']-10, 
+                                    npoints=window_length)
+                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
+                    window = h.gauss_func(np.arange(11), 5, window_length)
+                    specZ = np.convolve(specZ, window, mode='same')
+                else:
+                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
+                specZ = h.z2lin(specZ)
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
             specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
@@ -1165,6 +1198,7 @@ class peakTreeBuffer():
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 
  
+            peak_finding_params['vel_step'] = vel_step
             #print('Z', h.lin2z(specZ))
 
             spectrum = { 
@@ -1173,12 +1207,15 @@ class peakTreeBuffer():
                 'polarimetry': self.settings['polarimetry'],
                 'specZ': specZ, 'noise_thres': noise_thres, 
                 'specZ_mask': specZ_mask, 
+                'specZ_raw': specZ_raw,
                 'no_temp_avg': no_averages, 
                 'specSNRco': specSNRco, 
                 'specSNRco_mask': specSNRco_mask 
             } 
 
-            travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params) 
+            travtree = generate_tree.tree_from_spectrum_peako(
+                #{**spectrum}, peak_finding_params, gaps=gaps) 
+                {**spectrum}, peak_finding_params, gaps=None) 
             return travtree, spectrum 
 
         elif self.type == 'peako':
@@ -1311,8 +1348,22 @@ class peakTreeBuffer():
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             if peak_finding_params['smooth_polyorder'] != 0 and window_length > 1:
-                specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                            polyorder=peak_finding_params['smooth_polyorder'], mode='nearest')
+                specZ = h.lin2z(specZ)
+                if peak_finding_params['smooth_polyorder'] < 10:
+                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                                polyorder=peak_finding_params['smooth_polyorder'], 
+                                mode='nearest')
+                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
+                    if indices:
+                        _, specZ, _ = loess_1d(velocity, specZ, 
+                                    degree=peak_finding_params['smooth_polyorder']-10, 
+                                    npoints=window_length)
+                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
+                    window = h.gauss_func(np.arange(11), 5, window_length)
+                    specZ = np.convolve(specZ, window, mode='same')
+                else:
+                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
+                specZ = h.z2lin(specZ)
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
             specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':
@@ -1388,7 +1439,9 @@ class peakTreeBuffer():
 
             travtree = {}
             #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
-            travtree = generate_tree.tree_from_spectrum_peako({**spectrum}, peak_finding_params, gaps=gaps)
+            travtree = generate_tree.tree_from_spectrum_peako(
+                #{**spectrum}, peak_finding_params, gaps=gaps) 
+                {**spectrum}, peak_finding_params, gaps=None) 
 
             return travtree, spectrum
 
