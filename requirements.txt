@@ -3,5 +3,6 @@ numba
 toml
 scipy
 graphviz==0.8.2
+loess
 matplotlib==2.2.2
 netCDF4==1.4.2

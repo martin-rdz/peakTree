@@ -53,7 +53,6 @@ The peakTree software package should be included in a file structure similar to 
 
 Please update your meta information in the `output_meta.toml` file.
 
-
 ### Usage
 
 #### 1. Define the peakfinding paramters 
@@ -102,6 +101,11 @@ convert a peakTree netcdf file to dictionary format
 python3 convert_to_json.py output/20170629_0830_Pol_peakTree.nc4 output/20170629_0830_data \
  --time-interval 0-450 --range-interval 0-100
 ```
+
+### Binary tree structure
+
+![Binary tree nomenclature and conventions](tutorials/binary_tree_colored.png)
+
 
 ### License
 Copyright 2022, Martin Radenz, Teresa Vogl

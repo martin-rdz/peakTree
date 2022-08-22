@@ -47,7 +47,7 @@ def iternodes(travtree):
         yield from iterchilds(travtree, n['coords'])
 
 
-def travtree2text(travtree, show_coordinats=True):
+def travtree2text(travtree, show_coordinates=True):
     """returns a string with the tabular representation of the traversed tree
     
     Args:
@@ -58,7 +58,7 @@ def travtree2text(travtree, show_coordinats=True):
     """
     lines = []
     levels = max(list(map(lambda v: len(v['coords']), travtree.values())))
-    if show_coordinats:
+    if show_coordinates:
         header = ' coordinates '+levels*'  '+ '                     Z       v    width    sk   LDR     t   LDRmax  prom'
     else:
         header = ' '+levels*'  '+ '             Z       v    width    sk   LDR     t   LDRmax  prom'
@@ -76,7 +76,7 @@ def travtree2text(travtree, show_coordinats=True):
             v['skew'], h.lin2z(v['ldr']), h.lin2z(v['thres']), h.lin2z(v['ldrmax']), h.lin2z(v['prominence']))
         #mom2 = '{:> 3.2f}, {:> 5.1f}, {:> 5.1f}'.format(v['skew'], h.lin2z(v['ldr']), h.lin2z(v['thres']))
         #txt = "{:>2d}{}{}{}{} {}\n{}{}".format(k, sp_before, bounds, sp_after, mmv, mom1, 33*' ', mom2)
-        if show_coordinats:
+        if show_coordinates:
             txt = "{}{} {}{} {}, {}".format(sp_before, bounds, coords, sp_after, mom1, mom2)
         else:
             txt = "{}{} {} {}, {}".format(sp_before, bounds, sp_after, mom1, mom2)
@@ -128,8 +128,11 @@ def plot_spectrum(travtree, spectrum, savepath):
     for chunk in gen_lines_to_par(travtree):
         ax.plot(chunk[0], h.lin2z(np.array(chunk[1])), '-', color='grey')
 
-    flatten = [(item[1]['v'],item[1]['z']) for item in travtree.items()]
-    ax.plot([e[0] for e in flatten], h.lin2z(np.array([e[1] for e in flatten])), 'o', color='r', markersize=5)
+    flatten = [(item[1]['v'],item[1]['z'], item[0]) for item in travtree.items()]
+    cmap = plt.cm.get_cmap('jet', 7)
+    cmap.set_over('dimgrey')
+    for e in flatten:
+        ax.plot(e[0], h.lin2z(np.array(e[1])), 'o', color=cmap(e[2]), markersize=5)
 
     #ax.hlines(h.lin2z(valid_LDR), -10, 10, color='grey')
     ax.hlines(h.lin2z(spectrum['noise_thres']), -10, 10, ls='--', lw=1.3, color='grey')
@@ -180,7 +183,7 @@ def plot_spectrum(travtree, spectrum, savepath):
 
 
     if travtree != {}:
-        txt = travtree2text(travtree, show_coordinats=False)
+        txt = travtree2text(travtree, show_coordinates=False)
         ax.text(0.03, 0.42, txt,
                 horizontalalignment='left', verticalalignment='top',
                 transform=fig.transFigure, fontsize=11, family='monospace',)

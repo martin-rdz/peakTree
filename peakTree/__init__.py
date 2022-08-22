@@ -42,6 +42,7 @@ from numba import jit
 import scipy.signal
 #import peakTree.fast_funcs as fast_funcs
 
+from peakTree._meta import __version__, __author__
 
 #@profile
 def check_part_not_reproduced(tree, spectrum):
@@ -739,6 +740,8 @@ class peakTreeBuffer():
             ir_min, ir_max = np.where(self.range_chirp_mapping == ind_chirp)[0][np.array([0, -1])]
             #print('ir_min, ir_max', ir_min, ir_max)
         peak_finding_params = (lambda d: d.update(peak_finding_params) or d)(self.peak_finding_params)
+        if 'smooth_in_dB' not in peak_finding_params:
+            peak_finding_params['smooth_in_dB'] = True
         log.debug(f'using peak_finding_params {peak_finding_params}')
         ir_b, ir_e = self.get_ir_interval(ir) 
         ir_slicer = slice(max(ir_b, ir_min), min(ir_e, ir_max))
@@ -1348,7 +1351,8 @@ class peakTreeBuffer():
             if self.settings['smooth_cut_sequence'] == 'cs':
                 specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
             if peak_finding_params['smooth_polyorder'] != 0 and window_length > 1:
-                specZ = h.lin2z(specZ)
+                if peak_finding_params['smooth_in_dB']:
+                    specZ = h.lin2z(specZ)
                 if peak_finding_params['smooth_polyorder'] < 10:
                     specZ = scipy.signal.savgol_filter(specZ, window_length, 
                                 polyorder=peak_finding_params['smooth_polyorder'], 
@@ -1363,7 +1367,8 @@ class peakTreeBuffer():
                     specZ = np.convolve(specZ, window, mode='same')
                 else:
                     raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
-                specZ = h.z2lin(specZ)
+                if peak_finding_params['smooth_in_dB']:
+                    specZ = h.z2lin(specZ)
             gaps = (specZ <= 0.) | ~np.isfinite(specZ)
             specZ[gaps] = specZ_raw[gaps]
             if self.settings['smooth_cut_sequence'] == 'sc':

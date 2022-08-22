@@ -816,9 +816,9 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params, gaps=None):
             # if moments['v'] == 0.0 or not np.isfinite(moments['v']):
             #     print(i, traversed[i])
             #     input()
-            if spectrum['polarimetry'] in ['LDR', 'STSR']:
-                print(f"{traversed[i]['bounds']} ldrs {h.lin2z(moments['ldrmin']):.2f}  ", 
-                      f"{h.lin2z(moments['ldrleft']):.2f} {h.lin2z(moments['ldrright']):.2f}")
+            #if spectrum['polarimetry'] in ['LDR', 'STSR']:
+            #    print(f"{traversed[i]['bounds']} ldrs {h.lin2z(moments['ldrmin']):.2f}  ", 
+            #          f"{h.lin2z(moments['ldrleft']):.2f} {h.lin2z(moments['ldrright']):.2f}")
 
         log.debug(print_tree.travtree2text(traversed))
 

@@ -3,7 +3,15 @@ Peak finding
 ======================
 
 The peak finding procedure is adapted to the peako [Kalesse_et_al_2019]_ parameters in v0.3.
-Most importantly, this means switching to LOESS smoothing and a generic peak-finding function.
+Additional averaging in time and height can be set via ``t_avg`` and ``h_avg`` with the units of ``[s]`` and ``[m]``, respectively.
+Smoothing along the velocity dimension can be done by 3 methods:
+
+#. ``scipy.signal.savgol_filter`` by ``setting smooth_polyorder = 1`` (linear) or ``= 2`` (quadratic)
+#. ``loess.loess_1d`` by ``setting smooth_polyorder = 11`` (linear) or ``= 12`` (quadratic)
+#. convolution with a gauss function by ``setting smooth_polyorder = 21``
+
+where the smoothing span is given by ``span`` in ``[m s-1]``.
+The actual peak finding parameters are ``prom_thres`` in ``[dB]`` and ``width_thres`` in ``[m s-1]``.
 
 
 Configuration
