@@ -1,8 +1,9 @@
-numpy==1.21
+numpy==1.22
 numba
 toml
 scipy
 graphviz==0.8.2
 loess
+rpgpy
 matplotlib==2.2.2
 netCDF4==1.4.2

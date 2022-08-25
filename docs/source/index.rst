@@ -12,6 +12,7 @@ peakTree documentation
    :caption: Contents:
 
    Overview <README.md>
+   tutorial.rst
    peak_finding.rst
    polarimetry.rst
    data_format.rst

@@ -68,7 +68,7 @@
     polarimetry = 'LDR'
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
     station_altitude = 9
-    #add_to_fname = '_rectwin'
+    add_to_fname = '_nmra'
 [Lacros_Pun.settings.peak_finding_params]
     #roll_velocity = 65 # for 512 bins = 7.92 m/s
     roll_velocity = 3.2 # now m/s (6.56 m/s)

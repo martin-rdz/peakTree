@@ -27,9 +27,9 @@ setup(
     # automatic installation of the dependencies did not work with the test.pypi
     # below the try to fix it
     setup_requires=['wheel', 'numpy==1.22.0', 'scipy>=1.6', 'netCDF4>=1.4.2', 
-                      'matplotlib>=2.2.2', 'toml>=0.10.0', 'numba>=0.45.1', 'graphviz', 'loess'],
+                      'matplotlib>=2.2.2', 'toml>=0.10.0', 'numba>=0.45.1', 'rpgpy', 'graphviz', 'loess'],
     install_requires=['wheel', 'numpy==1.22.0', 'scipy>=1.6', 'netCDF4>=1.4.2', 
-                      'matplotlib>=2.2.2', 'toml>=0.10.0', 'numba>=0.45.1', 'graphviz', 'loess'],
+                      'matplotlib>=2.2.2', 'toml>=0.10.0', 'numba>=0.45.1', 'rpgpy', 'graphviz', 'loess'],
     #ext_modules=cythonize("pyLARDA/peakTree_fastbuilder.pyx"),
     classifiers=[
         "Development Status :: 3 - Alpha",
