@@ -378,7 +378,7 @@
     t_avg = 9            # s
     #h_avg = 89          # m
     h_avg = 0            # m
-    span = 0.35          # m s-1
+    span = 0.23          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.8     # dB
     width_thres = 0      # m s-1
@@ -388,7 +388,7 @@
     smooth_in_dB = false
     t_avg = 5            # s
     h_avg = 0            # m
-    span = 0.30          # m s-1
+    span = 0.23          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.8     # dB
     width_thres = 0      # m s-1
@@ -397,6 +397,6 @@
     t_avg = 0            # s
     h_avg = 0            # m
     span = 0.25          # m s-1
-    smooth_polyorder = 0
+    smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1

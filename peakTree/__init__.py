@@ -417,13 +417,11 @@ class peakTreeBuffer():
         }
         log.debug(f'Header: {header.keys()}')
         log.debug(f'Data  : {data.keys()}')
-        log.debug(f"no averaged spectra: {header['ChirpReps']/header['SpecN']}")
+        #log.debug(f"no averaged spectra: {(header['ChirpReps']/header['SpecN'])}")
         Tc = 2.99e8/(4*header['MaxVel']*header['Freq']*1e9)
         log.debug(f"Tc [from Nyquist]: {Tc}")
         log.debug(f"Sample dur: {Tc*header['ChirpReps']} {np.sum(Tc*header['ChirpReps'])} {header['SampDur']}")
         log.debug(f"SeqIntTime: {header['SeqIntTime']}")
-
-
         offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
         self.timestamps = offset + data['Time'] + data['MSec']*1e-3
         self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
@@ -862,6 +860,7 @@ class peakTreeBuffer():
                                     npoints=window_length)
                 elif 20 < peak_finding_params['smooth_polyorder'] < 30:
                     window = h.gauss_func(np.arange(11), 5, window_length)
+                    window /= np.sum(window)
                     specZ = np.convolve(specZ, window, mode='same')
                 else:
                     raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
@@ -1186,6 +1185,7 @@ class peakTreeBuffer():
                                     npoints=window_length)
                 elif 20 < peak_finding_params['smooth_polyorder'] < 30:
                     window = h.gauss_func(np.arange(11), 5, window_length)
+                    window /= np.sum(window)
                     specZ = np.convolve(specZ, window, mode='same')
                 else:
                     raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
@@ -1363,6 +1363,7 @@ class peakTreeBuffer():
                                     npoints=window_length)
                 elif 20 < peak_finding_params['smooth_polyorder'] < 30:
                     window = h.gauss_func(np.arange(11), 5, window_length)
+                    window /= np.sum(window)
                     specZ = np.convolve(specZ, window, mode='same')
                 else:
                     raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
