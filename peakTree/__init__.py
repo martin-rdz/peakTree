@@ -271,8 +271,63 @@ class peakTreeBuffer():
             self.load_rpgbinary_spec(filename, load_to_ram=load_to_ram)
         elif self.loader == 'rpgpy':
             self.load_rpgpy_spec(filename, load_to_ram=load_to_ram)
+        elif self.loader == 'znc':
+            self.load_znc_file(filename, load_to_ram=load_to_ram)
         else:
             self.load_spec_file(filename, load_to_ram=load_to_ram)
+
+    def load_znc_file(self, filename, load_to_ram=False):
+        """load spectra from raw file
+        
+        Args:
+            filename: specify file
+        """
+        self.type = 'spec'
+
+        self.f = netCDF4.Dataset(filename, 'r')
+        print('keys ', self.f.variables.keys())
+
+        self.timestamps = self.f.variables['time'][:]
+        print('time ', self.timestamps[:10])
+        self.delta_ts = np.mean(np.diff(self.timestamps)) if self.timestamps.shape[0] > 1 else 2.0
+        self.range = self.f.variables['range'][:]
+        print('range ', self.range[:10])
+        self.velocity = self.f.variables['doppler'][:]
+        print('velocity ', self.velocity[:10])
+        print('SPCco chunking ', self.f.variables['SPCco'].chunking())
+
+        self.begin_dt = h.ts_to_dt(self.timestamps[0])
+
+
+        # alexanders format spec, range, time
+        # znc format time, range, spec
+        if load_to_ram == True:
+            self.spectra_in_ram = True
+            #self.Z = self.f.variables['Z'][:].filled()
+            #self.LDR = self.f.variables['LDR'][:].filled()
+            #self.SNRco = self.f.variables['SNRco'][:].filled()
+            self.SPCcx=self.f.variables['SPCcx'][:].filled() 
+            self.SPCco=self.f.variables['SPCco'][:].filled()
+            self.SNRCorFaCx=np.repeat(self.f.variables['SNRCorFaCx'][:].filled()[:, :, np.newaxis], len(self.SPCcx[0,0]), axis=2) 
+            self.SNRCorFaCo=np.repeat(self.f.variables['SNRCorFaCo'][:].filled()[:, :, np.newaxis], len(self.SPCco[0,0]), axis=2)
+            self.RadarConst_2D=np.repeat(self.f.variables['RadarConst'][:].filled()[:,np.newaxis],len(self.SPCcx[0]),axis=1) 
+            self.RadarConst_3D=np.repeat(self.RadarConst_2D[:,:,np.newaxis],len(self.SPCcx[0,0]),axis=2) 
+            self.Range_2D=np.repeat(self.f.variables['range'][:].filled()[:,np.newaxis],len(self.SPCcx[0,0]),axis=1)
+            self.Range_3D=np.repeat(self.Range_2D[np.newaxis,:],len(self.SPCcx),axis=0)
+            self.LDR = self.SPCcx/self.SPCco*self.SNRCorFaCx/self.SNRCorFaCo 
+            self.LDR = np.moveaxis(self.LDR, [0,1,2], [2,1,0])
+            self.Z = self.SPCco*self.RadarConst_3D*(self.Range_3D/5000)**2*self.SNRCorFaCo 
+            self.Z = np.moveaxis(self.Z, [0,1,2], [2,1,0])
+            self.SNRco=self.SPCco*self.SNRCorFaCo
+            self.SNRco = np.moveaxis(self.SNRco, [0,1,2], [2,1,0])
+        else:
+            raise ValueError("load_to_ram=False not implemented yet")
+        
+        print('shape Z', self.Z.shape)
+        print('shape LDR', self.LDR.shape)
+        print('shape SNRco', self.SNRco.shape)
+
+
 
     def load_spec_file(self, filename, load_to_ram=False):
         """load spectra from raw file
@@ -280,7 +335,7 @@ class peakTreeBuffer():
         Args:
             filename: specify file
         """
-        self.type = 'spec'
+        self.type = 'znc'
 
         self.f = netCDF4.Dataset(filename, 'r')
         print('keys ', self.f.variables.keys())
@@ -301,8 +356,6 @@ class peakTreeBuffer():
             self.Z = self.f.variables['Z'][:].filled()
             self.LDR = self.f.variables['LDR'][:].filled()
             self.SNRco = self.f.variables['SNRco'][:].filled()
-
-
 
     def load_peakTree_file(self, filename):
         """load preprocessed peakTree file

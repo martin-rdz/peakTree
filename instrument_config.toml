@@ -396,7 +396,35 @@
     thres_factor_co = false # false | factor in linear units
     t_avg = 0            # s
     h_avg = 0            # m
-    span = 0.25          # m s-1
+    span = 0.30          # m s-1
     smooth_polyorder = 2
     prom_thres = 0.5     # dB
     width_thres = 0      # m s-1
+
+[NMRA_nmr]
+    location = "Neumayer III"
+    shortname = "NMR"
+    loader = 'znc'
+[NMRA_nmr.settings]
+    decoupling = -30
+    grid_time = 6
+    max_no_nodes = 15
+    polarimetry = 'LDR'
+    smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
+    station_altitude = 60
+    add_to_fname = '_nmra'
+[NMRA_nmr.settings.peak_finding_params]
+    #roll_velocity = 65 # for 512 bins = 7.92 m/s
+    roll_velocity = 3.2 # now m/s (6.56 m/s)
+    # supress spurious peaks introduced by tails; back to 3 as the other tail filter should work better
+    thres_factor_co = 2.5 # false | factor in linear units
+    thres_factor_cx = 3.5 # false | factor in linear units
+    cal_offset = 0        # dB
+    tail_filter = true    # true | false | omit; only tested with LACROS-Mira 
+    # new: seconds instead of index
+    t_avg = 6             # s
+    h_avg = 0             # m
+    span = 0.3            # m s-1
+    smooth_polyorder = 2  # 0 deactivate | 2 second order
+    prom_thres = 0.3      # dB
+    width_thres = 0.0     # m s-1
