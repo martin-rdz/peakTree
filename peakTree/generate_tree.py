@@ -297,6 +297,9 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     """
     mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1]
     Z = spectrum['specZ'][bounds[0]:bounds[1]+1][~mask].sum()
+    print('incl noise ', h.lin2z(Z))
+    Z = Z - spectrum['noise_lvl'][bounds[0]:bounds[1]+1][~mask].sum()
+    print('wo noise   ', h.lin2z(Z))
     # TODO add the masked processing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:

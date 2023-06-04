@@ -276,13 +276,14 @@ class peakTreeBuffer():
         else:
             self.load_spec_file(filename, load_to_ram=load_to_ram)
 
+
     def load_znc_file(self, filename, load_to_ram=False):
         """load spectra from raw file
         
         Args:
             filename: specify file
         """
-        self.type = 'spec'
+        self.type = 'znc'
 
         self.f = netCDF4.Dataset(filename, 'r')
         print('keys ', self.f.variables.keys())
@@ -295,39 +296,36 @@ class peakTreeBuffer():
         self.velocity = self.f.variables['doppler'][:]
         print('velocity ', self.velocity[:10])
         print('SPCco chunking ', self.f.variables['SPCco'].chunking())
-
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
-
 
         # alexanders format spec, range, time
         # znc format time, range, spec
         if load_to_ram == True:
             self.spectra_in_ram = True
-            #self.Z = self.f.variables['Z'][:].filled()
-            #self.LDR = self.f.variables['LDR'][:].filled()
-            #self.SNRco = self.f.variables['SNRco'][:].filled()
             self.SPCcx=self.f.variables['SPCcx'][:].filled() 
             self.SPCco=self.f.variables['SPCco'][:].filled()
-            self.SNRCorFaCx=np.repeat(self.f.variables['SNRCorFaCx'][:].filled()[:, :, np.newaxis], len(self.SPCcx[0,0]), axis=2) 
-            self.SNRCorFaCo=np.repeat(self.f.variables['SNRCorFaCo'][:].filled()[:, :, np.newaxis], len(self.SPCco[0,0]), axis=2)
-            self.RadarConst_2D=np.repeat(self.f.variables['RadarConst'][:].filled()[:,np.newaxis],len(self.SPCcx[0]),axis=1) 
-            self.RadarConst_3D=np.repeat(self.RadarConst_2D[:,:,np.newaxis],len(self.SPCcx[0,0]),axis=2) 
-            self.Range_2D=np.repeat(self.f.variables['range'][:].filled()[:,np.newaxis],len(self.SPCcx[0,0]),axis=1)
-            self.Range_3D=np.repeat(self.Range_2D[np.newaxis,:],len(self.SPCcx),axis=0)
-            self.LDR = self.SPCcx/self.SPCco*self.SNRCorFaCx/self.SNRCorFaCo 
-            self.LDR = np.moveaxis(self.LDR, [0,1,2], [2,1,0])
-            self.Z = self.SPCco*self.RadarConst_3D*(self.Range_3D/5000)**2*self.SNRCorFaCo 
-            self.Z = np.moveaxis(self.Z, [0,1,2], [2,1,0])
-            self.SNRco=self.SPCco*self.SNRCorFaCo
-            self.SNRco = np.moveaxis(self.SNRco, [0,1,2], [2,1,0])
+            nfft = self.f.variables['nfft'][:].filled()
+
+            # np.outer is a shorthand to make RadarConst(time) and range(range) a 2d array
+            radar_const_2d = np.outer(self.f.variables['RadarConst'][:], (self.f.variables['range'][:]/5000)**2)
+            # include the correction factor (according to the test case only relevant in lowest range gates)
+            
+            # SPCco(3508,496,512) radar_const_2d(3508,496) [repeat adds velocity dimension]
+            # Also, the calibration constant has to be divided by the number of fft points
+            self.SNRco = self.SPCco * np.repeat(self.f.variables['SNRCorFaCo'][:][:,:,np.newaxis], nfft, axis=2)
+            self.Z = self.SPCco * np.repeat(radar_const_2d[:,:,np.newaxis], nfft, axis=2)/nfft
+            self.SNRcx = self.SPCcx * np.repeat(self.f.variables['SNRCorFaCx'][:][:,:,np.newaxis], nfft, axis=2)
+            self.Zcx = self.SPCcx * np.repeat(radar_const_2d[:,:,np.newaxis], nfft, axis=2)/nfft
+            
+            noiseCo = self.f.variables['HSDco'] * radar_const_2d/nfft
+            self.noiseCo = np.repeat(noiseCo[:,:,np.newaxis], nfft, axis=2)
+
+            self.LDR = self.Zcx / self.Z
+            #print('Z', type(self.Z))
+            #print('SNRCo', type(self.SNRco))
+            #print('LDR', type(self.LDR))
         else:
             raise ValueError("load_to_ram=False not implemented yet")
-        
-        print('shape Z', self.Z.shape)
-        print('shape LDR', self.LDR.shape)
-        print('shape SNRco', self.SNRco.shape)
-
-
 
     def load_spec_file(self, filename, load_to_ram=False):
         """load spectra from raw file
@@ -335,7 +333,7 @@ class peakTreeBuffer():
         Args:
             filename: specify file
         """
-        self.type = 'znc'
+        self.type = 'spec'
 
         self.f = netCDF4.Dataset(filename, 'r')
         print('keys ', self.f.variables.keys())
@@ -1013,6 +1011,232 @@ class peakTreeBuffer():
                         tail_filter=popt.tolist(), silent=silent)
             
             return travtree, spectrum
+
+
+
+        elif self.type == 'znc':
+            decoupling = self.settings['decoupling']
+
+            # why is ravel necessary here?
+            # flatten seems to faster
+            print(it_slicer, ir_slicer)
+
+            if self.spectra_in_ram:
+                specZ_2d = self.Z[it_slicer,ir_slicer,:][:]
+                no_averages = np.prod(specZ_2d.shape[:-1])
+                specLDR_2d = self.LDR[it_slicer,ir_slicer,:][:]
+                specZcx_2d = specZ_2d*specLDR_2d
+                # np.average is slightly faster than .mean
+                #specZcx = specZcx_2d.mean(axis=1)
+                specZcx = np.average(specZcx_2d, axis=(0,1))
+                #specZ = specZ_2d.mean(axis=1)
+                specZ = np.average(specZ_2d, axis=(0,1))
+                noiseCo_2d = self.noiseCo[it_slicer,ir_slicer][:]
+                nCo = np.average(self.noiseCo[it_slicer,ir_slicer][:], axis=(0,1))
+                print('noise get spec', noiseCo_2d.shape, h.lin2z(nCo[:10]))
+            else:
+                raise ValueError('Not yet adapted')
+                specZ = self.f.variables['Z'][:,ir_slicer,it_slicer][:].filled()
+                no_averages = specZ.shape[1]
+                specLDR = self.f.variables['LDR'][:,ir_slicer,it_slicer][:].filled()
+                specZcx = specZ*specLDR
+                specZcx = specZcx.mean(axis=(1,2))
+                specZ = specZ.mean(axis=(1,2))
+
+            # first roll to get rid of the 0 ... 10 -10 -0.1 m/s spectrum
+            velocity = self.velocity.copy()
+            no_roll = -1*int(velocity.shape[0]/2)
+            velocity = np.roll(velocity, no_roll)
+            assert np.all(np.diff(velocity) > 0), "Velocity array not strictly ascending"
+            specZ = np.roll(specZ, no_roll)[::-1]
+            specZcx = np.roll(specZcx, no_roll)[::-1]
+
+            specLDR = specZcx/specZ
+            assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
+            assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
+            assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
+            #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
+            #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
+
+            # fill values can be both nan and 0
+            specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
+            empty_spec = np.all(specZ_mask)
+            if empty_spec:
+                specZcx_mask = specZ_mask.copy()
+                specLDR_mask = specZ_mask.copy()
+            elif np.all(np.isnan(specZcx)):
+                specZcx_mask = np.ones_like(specZcx).astype(bool)
+                specLDR_mask = np.ones_like(specLDR).astype(bool)
+            else:
+                specZcx_mask = np.logical_or(~np.isfinite(specZ), ~np.isfinite(specZcx))
+                specLDR_mask = np.logical_or(specZ == 0, ~np.isfinite(specLDR))
+                # maybe omit one here?
+            assert np.all(specZcx_mask == specLDR_mask), f'masks not equal {specZcx} {specLDR}'
+            #specSNRco_mask = specSNRco == 0.
+            # print('specZ', specZ.shape, specZ)
+            # print('specLDR', specLDR.shape, specLDR)
+            # print('specSNRco', specSNRco.shape, specSNRco)
+
+            #specSNRco = np.ma.masked_equal(specSNRco, 0)
+            #noise_thres = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            noise_thres_old = 1e-25 if empty_spec else np.min(specZ[~specZ_mask])*peak_finding_params['thres_factor_co']
+            if not self.spectra_in_ram:
+                noise_thres = noise_thres_old
+            # alternate fit estimate for the problematic mira spectra 
+            else:
+                noise_thres = 1e-25 if empty_spec else np.nanmin(specZ_2d[specZ_2d > 0])*peak_finding_params['thres_factor_co']
+            #print('min in spec', h.lin2z(np.nanmin(specZ_2d[specZ_2d > 0])))
+            print(f'noise est {h.lin2z(noise_thres_old):.2f} -> {h.lin2z(noise_thres):.2f}')
+
+            vel_step = velocity[1] - velocity[0]
+            if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
+                if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
+                    roll_velocity = peak_finding_params['roll_velocity']
+                log.info(f'>> roll velocity active {roll_velocity}')
+                upck = _roll_velocity(velocity, vel_step, roll_velocity, 
+                                      [specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask])
+                velocity = upck[0]
+                specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask = upck[1]
+
+            window_length = h.round_odd(peak_finding_params['span']/vel_step)
+            log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+
+            specZ_raw = specZ.copy()
+
+            # for noise separeated peaks 0 is a better fill value
+            if type(tail_filter) == list:
+                noise_tail = h.gauss_func_offset(velocity, *tail_filter)
+                log.warning(f'tail filter applied {tail_filter}')
+                specZ[specZ < h.z2lin(noise_tail + 4)] = np.nan
+                tail_filter_applied = True
+                #print('tail filter applied, ', tail_filter_applied, tail_filter)
+            else:
+                tail_filter_applied = False
+        
+            # --------------------------------------------------------------------
+            # smoothing and cutting. the order can be defined in instrument_config
+            if self.settings['smooth_cut_sequence'] == 'cs':
+                # include the Baur-Blur
+                noise_mask = specZ < noise_thres
+                noise_mask = h.blur_mask(noise_mask, 3)
+                specZ[noise_mask] = np.nan #noise_thres / 6. 
+            if peak_finding_params['smooth_polyorder'] != 0:
+                specZ = h.lin2z(specZ)
+                if peak_finding_params['smooth_polyorder'] < 10:
+                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                                polyorder=peak_finding_params['smooth_polyorder'], 
+                                mode='nearest')
+                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
+                    if indices:
+                        _, specZ, _ = loess_1d(velocity, specZ, 
+                                    degree=peak_finding_params['smooth_polyorder']-10, 
+                                    npoints=window_length)
+                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
+                    window = h.gauss_func(np.arange(11), 5, window_length)
+                    window /= np.sum(window)
+                    specZ = np.convolve(specZ, window, mode='same')
+                else:
+                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
+                specZ = h.z2lin(specZ)
+            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
+            # this collides with the tail filter
+            #specZ[gaps] = specZ_raw[gaps]
+            if self.settings['smooth_cut_sequence'] == 'sc':
+                noise_mask = specZ < noise_thres
+                noise_mask = h.blur_mask(noise_mask, 5)
+                specZ[noise_mask] = np.nan #noise_thres / 6. 
+            
+            # TODO add for other versions
+            #specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
+            specZ_mask = (noise_mask) | ~np.isfinite(specZ)
+
+            peak_finding_params['vel_step'] = vel_step
+            #specZ[specZ_mask] = 0
+
+            spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
+                        'noise_thres': noise_thres, 'no_temp_avg': no_averages}
+            spectrum['specZ'] = specZ[:]
+            spectrum['vel'] = velocity
+            spectrum['noise_lvl'] = nCo
+
+            if tail_filter_applied:     
+                spectrum['tail_filter'] = tail_filter
+
+            # unsmoothed spectrum
+            spectrum['specZ_raw'] = specZ_raw[:]
+            
+            spectrum['specZ_mask'] = specZ_mask[:]
+            #spectrum['specSNRco'] = specSNRco[:]
+            #spectrum['specSNRco_mask'] = specSNRco_mask[:]
+            spectrum['specLDR'] = specLDR[:]
+            spectrum['specLDR_mask'] = specLDR_mask[:]
+            
+            spectrum['specZcx'] = specZcx[:]
+            # spectrum['specZcx_mask'] = np.logical_or(spectrum['specZ_mask'], spectrum['specLDR_mask'])
+            if ('thres_factor_cx' in peak_finding_params 
+                and peak_finding_params['thres_factor_cx']):
+                noise_cx_thres = np.nanmin(spectrum['specZcx']) * peak_finding_params['thres_factor_cx']
+            else:
+                noise_cx_thres = noise_mean
+            specZcx_mask = (specZcx_mask | (specZcx < noise_cx_thres))
+            spectrum['noise_cx_thres'] = noise_cx_thres
+
+            trust_ldr_mask = specZcx_mask | ~np.isfinite(spectrum['specZcx']) | specZ_mask
+            spectrum['trust_ldr_mask'] = trust_ldr_mask
+            spectrum['specLDRmasked'] = spectrum['specLDR'].copy()
+            spectrum['specLDRmasked'][trust_ldr_mask] = np.nan
+
+            spectrum['decoupling'] = decoupling
+            spectrum['polarimetry'] = self.settings['polarimetry']
+
+            #                                     deep copy of dict 
+            #travtree = generate_tree.tree_from_spectrum({**spectrum}, peak_finding_params)
+            travtree = generate_tree.tree_from_spectrum_peako(
+                #{**spectrum}, peak_finding_params, gaps=gaps) 
+                {**spectrum}, peak_finding_params, gaps=None) 
+            #travtree = {}
+
+            if (travtree 
+                 and 'tail_filter' in peak_finding_params
+                 and peak_finding_params['tail_filter'] is True):
+                no_ind = (travtree[0]['bounds'][1]- travtree[0]['bounds'][0])
+                #print('tail criterion? ', no_ind * vel_step, '>', 9 * travtree[0]['width']) 
+            # an agressive tail filter would have to act here?
+            if (travtree 
+                 and 'tail_filter' in peak_finding_params
+                 and peak_finding_params['tail_filter'] is True
+                 and h.lin2z(travtree[0]['z']) > -3 
+                 #and travtree[0]['width'] < 0.22 and not tail_filter_applied):
+                 #and travtree[0]['width'] < 0.31 
+                 and no_ind * vel_step > 9 * travtree[0]['width'] 
+                 and not tail_filter_applied):
+
+                # strategy 1 fit here
+                # alternative parametrize more strongly
+                log.warning(f'Tails might occur here {sel_ts} {sel_range}')
+                ind_vel_node0 = np.searchsorted(spectrum['vel'], travtree[0]['v'])
+                no_ind *= 0.40
+                fit_spec = h.lin2z(specZ_raw.copy())
+                #fit_spec[ind_vel_node0-int(no_ind/2):ind_vel_node0+int(no_ind/2)] = np.nan
+                fit_spec[fit_spec > h.lin2z(noise_thres) + 13] = np.nan
+                print('noise thres ', h.lin2z(noise_thres), h.lin2z(noise_thres) + 15)
+                fit_mask = np.isfinite(fit_spec)
+                try:
+                    popt, _ = h.gauss_fit(spectrum['vel'][fit_mask], fit_spec[fit_mask])
+                    successful_fit = True
+                except:
+                    successful_fit = False
+                    log.warning('fit failed')
+                    #input()
+
+                if successful_fit:
+                    travtree, spectrum = self.get_tree_at(
+                        sel_ts, sel_range, temporal_average=temporal_average, 
+                        roll_velocity=roll_velocity, peak_finding_params=peak_finding_params, 
+                        tail_filter=popt.tolist(), silent=silent)
+            
+            return travtree, spectrum
+
 
         elif self.type == 'peakTree':
             settings_file = ast.literal_eval(self.f.settings)

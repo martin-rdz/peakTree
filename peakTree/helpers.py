@@ -192,3 +192,30 @@ def estimate_noise_array(spectra_array):
             out[ts, rg] = estimate_mean_noise(spectra_array[ts, rg, :])
 
     return out
+
+
+def blur_mask(msk, width, axis=-1):
+    """Reduce the thresholding effect for spectra with single bins above the estimated noise level
+    
+    should mimic blurthres=1 or 2 in spectraprocessing
+    
+    Example:
+        ```
+        msk = (Zco[it,ir] < 1.01*noiseCo[it,ir])
+
+        fig, ax = plt.subplots(1, figsize=(9, 5))
+        ax.plot(msk, label='wo blur')
+        ax.plot(
+            blur_mask(msk, 5),
+            label='blured',)
+
+        ax.legend()
+        ax.set_xlim(-3, 100)
+        ax.set_ylabel('Mask 0=valid 1=noise')
+        ax.set_xlabel('Bin')
+        ```
+    """
+    msk_wide = scipy.ndimage.convolve1d(
+        (msk).astype(float), np.ones(width)/width, mode='wrap', axis=axis)
+    print('mask_blur', np.sum(msk), np.sum(msk_wide > 0.8))
+    return msk_wide > 0.8
