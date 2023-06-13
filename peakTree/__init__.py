@@ -1048,6 +1048,7 @@ class peakTreeBuffer():
             no_roll = -1*int(velocity.shape[0]/2)
             velocity = np.roll(velocity, no_roll)
             assert np.all(np.diff(velocity) > 0), "Velocity array not strictly ascending"
+            velocity = np.ma.getdata(velocity, subok=False)
             specZ = np.roll(specZ, no_roll)[::-1]
             specZcx = np.roll(specZcx, no_roll)[::-1]
 
@@ -1055,6 +1056,8 @@ class peakTreeBuffer():
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
             assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
             assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
+            assert not isinstance(velocity, np.ma.core.MaskedArray), "LDR not np.ndarray"
+            assert not isinstance(nCo, np.ma.core.MaskedArray), "LDR not np.ndarray"
             #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
             #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
 
