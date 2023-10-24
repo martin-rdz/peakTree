@@ -302,14 +302,14 @@ class peakTreeBuffer():
         # znc format time, range, spec
         if load_to_ram == True:
             self.spectra_in_ram = True
-            self.SPCcx=self.f.variables['SPCcx'][:].filled() 
             self.SPCco=self.f.variables['SPCco'][:].filled()
+            self.SPCcx=self.f.variables['SPCcx'][:].filled() 
             nfft = self.f.variables['nfft'][:].filled()
 
             # np.outer is a shorthand to make RadarConst(time) and range(range) a 2d array
             radar_const_2d = np.outer(self.f.variables['RadarConst'][:], (self.f.variables['range'][:]/5000)**2)
             # include the correction factor (according to the test case only relevant in lowest range gates)
-            
+
             # SPCco(3508,496,512) radar_const_2d(3508,496) [repeat adds velocity dimension]
             # Also, the calibration constant has to be divided by the number of fft points
             self.SNRco = self.SPCco * np.repeat(self.f.variables['SNRCorFaCo'][:][:,:,np.newaxis], nfft, axis=2)
@@ -319,8 +319,67 @@ class peakTreeBuffer():
             
             noiseCo = self.f.variables['HSDco'] * radar_const_2d/nfft
             self.noiseCo = np.repeat(noiseCo[:,:,np.newaxis], nfft, axis=2)
+        
+            if self.settings['polarimetry'] == 'LDR':
+                self.LDR = self.Zcx / self.Z
 
-            self.LDR = self.Zcx / self.Z
+            elif self.settings['polarimetry'] == 'STSR':
+                # the equations for this part are provided by K. Ohneiser
+                j11_raw = self.SPCcx
+                j22_raw = self.SPCco
+                j12_im = self.f.variables['SPCcocxIm'][:].filled() 
+                j12_re = self.f.variables['SPCcocxRe'][:].filled() 
+                j12_raw = j12_re + 1j * j12_im
+
+                # TODO FFT shift
+                #Amplification and phase correction
+                #20230117, 15:00 UTC
+                pcorr_magx = 0.95 
+                pcorr_phasex = 27. 
+                  
+                if self.settings['STSR_eq'] == 'myagkov': 
+                    ##Myagkov version
+                    #Convert phaseshift to complex number
+                    phase_corr = np.exp(1j*pcorr_phasex*np.pi/180);
+                    j11 =j11_raw
+                    j22 =j22_raw*pcorr_magx
+                    j12 =j12_raw*np.sqrt(pcorr_magx)*phase_corr
+                    #Rotation by 45 degrees
+                    j11_45 = 0.5*(j11+j22-2*np.real(j12))
+                    j22_45 = 0.5*(j11+j22+2*np.real(j12))
+                    D_45   = 0.5*(j11-j22+2*1j*np.imag(j12))
+                
+                elif self.settings['STSR_eq'] == 'bauer': 
+                    ##Bauer version
+                    #j22 =j22*N
+                    #j12 =j12*np.sqrt(N)*P
+                    #Rotation by 45 degrees
+                    phase_corr = np.exp(1j*pcorr_phasex*np.pi/180);
+                    pcorr = complex(pcorr_magx*np.cos(pcorr_phasex*np.pi/180.),pcorr_magx*np.sin(pcorr_phasex*np.pi/180.))
+                    j11=j11_raw
+                    j22=np.abs(pcorr)**2*j22_raw
+                    j12 =j12_raw*np.sqrt(pcorr_magx)*pcorr
+                    #that's Matthias equation for j12
+                    #reCoCxPcorr2 = 2.0 * sqrt(SnrCF7npco*SnrCF7npcx) * real_part(ave_complex_cocx_spc[*,irg]*pcorr[irg])
+                
+                    j11_45 = j22+j11-2*np.real(pcorr*j12_raw)
+                    j22_45 = j22+j11+2*np.real(pcorr*j12_raw)
+                    D_45   = j22-j11-2*1j*np.imag(pcorr*j12_raw)
+                else:
+                    raise ValueError("settings['STSR_eq'] has to be myagkov or bauer")
+                zdr   = np.abs(j22)/np.abs(j11)
+                rhohv = np.abs(j12)/np.sqrt((j11)*(j22))
+                dps   = np.angle(j12)
+                self.LDR  = (j11_45)/(j22_45)
+                print('LDR shape', self.LDR.shape)
+                #print('LDR', self.LDR[0,50,:])
+                #print('LDR', h.lin2z(self.LDR[0,50,:]))
+                rhocx = np.abs(D_45)/np.sqrt((j22_45)*(j11_45))
+                snr   = np.abs(j22)
+
+                self.LDR[self.LDR == 1] = np.nan
+                    
+
             #print('Z', type(self.Z))
             #print('SNRCo', type(self.SNRco))
             #print('LDR', type(self.LDR))
@@ -1182,6 +1241,8 @@ class peakTreeBuffer():
             else:
                 noise_cx_thres = noise_mean
             specZcx_mask = (specZcx_mask | (specZcx < noise_cx_thres))
+            print('specZcx_mask', np.where(~specZcx_mask))
+            print('specZ_mask', np.where(~specZ_mask))
             spectrum['noise_cx_thres'] = noise_cx_thres
 
             trust_ldr_mask = specZcx_mask | ~np.isfinite(spectrum['specZcx']) | specZ_mask

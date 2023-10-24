@@ -13,7 +13,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import helpers as h
 
-import graphviz
 import json
 
 
@@ -237,6 +236,7 @@ def dot_format(travtree, display="table"):
 
 def vis_tree(dot):
     """visualize the dot string"""
+    import graphviz
     src = graphviz.Source(dot)
     return src
 
