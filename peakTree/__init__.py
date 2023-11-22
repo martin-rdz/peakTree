@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import datetime
+from pathlib import Path
 import logging
 import ast
 import subprocess
@@ -22,6 +23,7 @@ from . import generate_tree
 import toml
 import scipy
 from loess.loess_1d import loess_1d
+import pandas as pd
 
 log = logging.getLogger(__name__)
 # log.setLevel(logging.DEBUG)
@@ -240,6 +242,7 @@ class peakTreeBuffer():
 
         with open(config_file) as cf:
             config = toml.loads(cf.read())
+        self.config_parent = Path(config_file).parent
 
         if system in config:
             self.settings = config[system]["settings"]
@@ -275,6 +278,25 @@ class peakTreeBuffer():
             self.load_znc_file(filename, load_to_ram=load_to_ram)
         else:
             self.load_spec_file(filename, load_to_ram=load_to_ram)
+
+    def load_calibration(self):
+        print(self.settings)
+        print(self.settings['cal_file'])
+        
+        data = pd.read_csv(
+            self.config_parent / self.settings['cal_file'], delimiter=';',
+            parse_dates=True, index_col='start_time')
+        dt64 = self.timestamps[:].astype('datetime64[s]')
+
+        itime_start = np.where(data.index <= dt64[0])[0][-1]
+        where_end = np.where(data.index >= dt64[-1])[0]
+        itime_end = where_end[0] + 1 if where_end else None
+        print('load calibration', itime_start, ':', itime_end)
+        data_narrow = data[itime_start:itime_end]
+        data_reindex = data_narrow.reindex(dt64, method='ffill')
+
+        self.pcorr_mag = data_reindex['pcorr_mag'].values
+        self.pcorr_phase = data_reindex['pcorr_phase'].values
 
 
     def load_znc_file(self, filename, load_to_ram=False):
@@ -331,11 +353,24 @@ class peakTreeBuffer():
                 j12_re = self.f.variables['SPCcocxRe'][:].filled() 
                 j12_raw = j12_re + 1j * j12_im
 
-                # TODO FFT shift
+                # TODO FFT shift???
+                self.load_calibration()
+                pcorr_magx = np.repeat(
+                    np.repeat(
+                        self.pcorr_mag[:,np.newaxis], self.f.variables['range'].shape[0], axis=1)[:,:,np.newaxis],
+                        nfft, axis=2)
+                print('pcorr_magx.shape', pcorr_magx.shape)
+                pcorr_phasex = np.repeat(
+                    np.repeat(
+                        self.pcorr_phase[:,np.newaxis], self.f.variables['range'].shape[0], axis=1)[:,:,np.newaxis],
+                        nfft, axis=2)
                 #Amplification and phase correction
+                #20230105
+                #pcorr_magx = 0.95 
+                #pcorr_phasex = -25. 
                 #20230117, 15:00 UTC
-                pcorr_magx = 0.95 
-                pcorr_phasex = 27. 
+                #pcorr_magx = 0.95 
+                #pcorr_phasex = 27. 
                   
                 if self.settings['STSR_eq'] == 'myagkov': 
                     ##Myagkov version

@@ -412,8 +412,9 @@
     polarimetry = 'STSR'
     STSR_eq = 'myagkov'        # myagkov | bauer
     smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
-    station_altitude = 900
+    station_altitude = 921
     add_to_fname = '_mbr7'
+    cal_file = 'calibration_settings/MBR7_eri.csv'
 [MBR7_eri.settings.peak_finding_params]
     #roll_velocity = 65 # for 512 bins = 7.92 m/s
     roll_velocity = 3.2 # now m/s (6.56 m/s)
