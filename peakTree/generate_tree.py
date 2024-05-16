@@ -66,7 +66,7 @@ def get_minima(array):
 
 
 @jit(fastmath=True)
-def split_peak_ind_by_space(peak_ind):
+def split_peak_ind_by_space_legacy(peak_ind):
     """split a list of peak indices by their maximum space
     use for noise floor separated peaks
     
@@ -82,6 +82,23 @@ def split_peak_ind_by_space(peak_ind):
     spacing = left_i[1:]-right_i[:-1]
     split_i = np.argmax(spacing)
     return peak_ind[:split_i+1], peak_ind[split_i+1:]
+
+
+def split_peak_ind_by_space(peak_ind):
+    """split a list of peak indices by their maximum space
+    use for noise floor separated peaks
+    
+    Args:
+        peak_ind: list of peak indices ``[(163, 165), (191, 210), (222, 229), (248, 256)]``
+    Returns:
+        left sublist, right sublist
+    """
+    if len(peak_ind) == 1:
+        return peak_ind, peak_ind
+    p_ind = np.array(peak_ind)
+    spacing = p_ind[:,0][1:]-p_ind[:,1][:-1]
+    split_i = np.argmax(spacing)
+    return p_ind[:split_i+1].tolist(), p_ind[split_i+1:].tolist()
 
 
 def peak_pairs_to_call(peak_ind):
@@ -284,7 +301,8 @@ def moment(x, Z):
     return mean, rms, skew
 
 #@profile
-@jit(fastmath=True)
+#@jit(fastmath=True)
+@jit(forceobj=True)
 def calc_moments(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -335,7 +353,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     # ldr calculation after the debugging session
     specLDRchunk = spectrum["specLDR"][bounds[0]:bounds[1]+1]
     ldrmax = specLDRchunk[ind_max]
-    if any(specLDRchunk > 0):
+    if np.any(specLDRchunk > 0):
         ldrmin = np.nanmin(specLDRchunk[specLDRchunk > 0])
     else:
         ldrmin = np.nan
