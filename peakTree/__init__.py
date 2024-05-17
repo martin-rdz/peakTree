@@ -647,7 +647,8 @@ class peakTreeBuffer():
                 self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
                 self.specZcx_2d_mask = (self.specZ_2d <= 1e-10) | (self.specZcx_2d <= 1e-10)
 
-                self.noise_thres_2d = self.Q*self.noise_combined/np.sqrt(self.no_avg_subs_2d)
+                self.noise_level_2d = self.noise_combined/np.sqrt(self.no_avg_subs_2d)
+                self.noise_thres_2d = self.Q*self.noise_level_2d
 
             elif self.settings['polarimetry'] == 'false':
                 if 'TotNoisePow' in data:
@@ -1518,7 +1519,7 @@ class peakTreeBuffer():
             assert specZ.shape[0] == self.no_fft, 'no_fft inconsistent'
             specZ = specZ * self.cal_constant_lin * self.range[ir]**2
             specZ_mask = np.logical_or(~np.isfinite(specZ), specZ == 0)
-            assert np.all(~specZ_mask), 'mask probably not necessary for kazr spec'
+            #assert np.all(~specZ_mask), 'mask probably not necessary for kazr spec'
  
             noise = h.estimate_noise(specZ, no_averages) 
             #print("nose_thres {:5.3f} noise_mean {:5.3f} no noise bins {}".format( 
@@ -1690,12 +1691,20 @@ class peakTreeBuffer():
                 noise_thres = peak_finding_params['thres_factor_co'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
             else:
                 noise_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
+            noise_level = np.average(self.noise_level_2d[it_slicer, ir_slicer], axis=(0,1))
+            noise_level = np.repeat(noise_level[np.newaxis], specZ.shape, axis=0)
+            print('noise get spec', self.noise_level_2d.shape, h.lin2z(noise_level[:10]))
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
             log.debug(f'current chirp [zero-based index] {ind_chirp}')
             vel_chirp = self.velocity[:, ind_chirp]
-            vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
+            if isinstance(vel_chirp, np.ma.core.MaskedArray):
+                vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
+            else:
+                log.debug(f'vel_chirp not masked')
+                vel_step = vel_chirp[1] - vel_chirp[0]
+            print('vel step', vel_step)
             if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
@@ -1785,6 +1794,7 @@ class peakTreeBuffer():
                     'vel': vel_chirp, 'ind_chirp': ind_chirp,
                     'polarimetry': self.settings['polarimetry'],
                     'specZ': specZ, 'noise_thres': noise_thres,
+                    'noise_lvl': noise_level,
                     'specZ_mask': specZ_mask,
                     'specZ_raw': specZ_raw,
                     'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
