@@ -44,7 +44,7 @@ from numba import jit
 import scipy.signal
 #import peakTree.fast_funcs as fast_funcs
 
-from peakTree._meta import __version__, __author__
+from ._meta import __version__, __author__
 
 #@profile
 def check_part_not_reproduced(tree, spectrum):
@@ -1151,8 +1151,8 @@ class peakTreeBuffer():
             assert not isinstance(specZ, np.ma.core.MaskedArray), "Z not np.ndarray"
             assert not isinstance(specZcx, np.ma.core.MaskedArray), "Z not np.ndarray"
             assert not isinstance(specLDR, np.ma.core.MaskedArray), "LDR not np.ndarray"
-            assert not isinstance(velocity, np.ma.core.MaskedArray), "LDR not np.ndarray"
-            assert not isinstance(nCo, np.ma.core.MaskedArray), "LDR not np.ndarray"
+            assert not isinstance(velocity, np.ma.core.MaskedArray), "Vel not np.ndarray"
+            assert not isinstance(nCo, np.ma.core.MaskedArray), "Noise not np.ndarray"
             #print('specZ ', type(specZ), h.lin2z(specZ[120:-120]))
             #print('specZcx ', type(specZcx), h.lin2z(specZcx[120:-120]))
 
