@@ -11,6 +11,7 @@ import datetime
 import numpy as np
 import scipy
 from numba import jit
+from loess.loess_1d import loess_1d
 
 
 def list_of_elem(elem, length):
@@ -219,3 +220,79 @@ def blur_mask(msk, width, axis=-1):
         (msk).astype(float), np.ones(width)/width, mode='wrap', axis=axis)
     print('mask_blur', np.sum(msk), np.sum(msk_wide > 0.8))
     return msk_wide > 0.8
+
+
+
+def smoothing_cutting(
+        specZ, noise_thres, velocity, sequence, 
+        peak_finding_params, log, baurblur=False):
+    """smoothing and noise cutting specZ
+
+    smooth in dB to avoid gaps and spurious peaks at corners
+
+    different methods are available
+    savgol
+    loesss
+    convolution with gauss
+    whittaker eilers
+
+    Args:
+        specZ: array of spectral reflectivities in linear units
+        noise_thres: linear units
+        velocity: velocity at spectra bin
+        sequence: cs or sc
+        peak_finding_params:
+            dict with parameters such as span, vel_step, smooth_polyorder
+        log: logging handler
+        baurblur: flag for bluring the mira mask
+
+    Returns:
+        specZ, noise_mask
+    
+    """
+
+    window_length = round_odd(peak_finding_params['span']/peak_finding_params['vel_step'])
+    log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
+
+    # smoothing and cutting. the order can be defined in instrument_config
+    if sequence == 'cs':
+        # include the Baur-Blur
+        noise_mask = specZ < noise_thres
+        if baurblur:
+            noise_mask = blur_mask(noise_mask, 3)
+        specZ[noise_mask] = np.nan #noise_thres / 6. 
+    if peak_finding_params['smooth_polyorder'] != 0:
+        specZ = lin2z(specZ)
+        if peak_finding_params['smooth_polyorder'] < 10:
+            specZ = scipy.signal.savgol_filter(specZ, window_length, 
+                        polyorder=peak_finding_params['smooth_polyorder'], 
+                        mode='nearest')
+        elif 10 < peak_finding_params['smooth_polyorder'] < 20:
+            _, specZ, _ = loess_1d(velocity, specZ, 
+                        degree=peak_finding_params['smooth_polyorder']-10, 
+                        npoints=window_length)
+        elif 20 < peak_finding_params['smooth_polyorder'] < 30:
+            window = gauss_func(np.arange(11), 5, window_length)
+            window /= np.sum(window)
+            specZ = np.convolve(specZ, window, mode='same')
+        elif 30 < peak_finding_params['smooth_polyorder'] < 40:
+            from whittaker_eilers import WhittakerSmoother
+            whittaker_smoother = WhittakerSmoother(
+                lmbda=peak_finding_params['lmbda'], 
+                order=peak_finding_params['smooth_polyorder']-30, 
+                data_length = len(specZ))
+            specZ = np.array(whittaker_smoother.smooth(specZ))
+        else:
+            raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
+        specZ = z2lin(specZ)
+    gaps = (specZ <= 0.) | ~np.isfinite(specZ)
+    # this collides with the tail filter
+    #specZ[gaps] = specZ_raw[gaps]
+    if sequence == 'sc':
+        noise_mask = specZ < noise_thres
+        if baurblur:
+            noise_mask = blur_mask(noise_mask, 5)
+        specZ[noise_mask] = np.nan #noise_thres / 6. 
+
+
+    return specZ, noise_mask

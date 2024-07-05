@@ -22,7 +22,6 @@ from . import print_tree
 from . import generate_tree
 import toml
 import scipy
-from loess.loess_1d import loess_1d
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -979,6 +978,7 @@ class peakTreeBuffer():
 
             specZ_raw = specZ.copy()
 
+            peak_finding_params['vel_step'] = vel_step
             # for noise separeated peaks 0 is a better fill value
             if type(tail_filter) == list:
                 noise_tail = h.gauss_func_offset(velocity, *tail_filter)
@@ -989,39 +989,16 @@ class peakTreeBuffer():
             else:
                 tail_filter_applied = False
         
-            # --------------------------------------------------------------------
-            # smoothing and cutting. the order can be defined in instrument_config
-            if self.settings['smooth_cut_sequence'] == 'cs':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0:
-                specZ = h.lin2z(specZ)
-                if peak_finding_params['smooth_polyorder'] < 10:
-                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                                polyorder=peak_finding_params['smooth_polyorder'], 
-                                mode='nearest')
-                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
-                    if indices:
-                        _, specZ, _ = loess_1d(velocity, specZ, 
-                                    degree=peak_finding_params['smooth_polyorder']-10, 
-                                    npoints=window_length)
-                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
-                    window = h.gauss_func(np.arange(11), 5, window_length)
-                    window /= np.sum(window)
-                    specZ = np.convolve(specZ, window, mode='same')
-                else:
-                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
-                specZ = h.z2lin(specZ)
-            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
-            # this collides with the tail filter
-            #specZ[gaps] = specZ_raw[gaps]
-            if self.settings['smooth_cut_sequence'] == 'sc':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            specZ, noise_mask = h.smoothing_cutting(
+                specZ, noise_thres, velocity, 
+                self.setting['smooth_cut_sequence'], peak_finding_params, log,
+                #baurblur=True # was only implemented for znc
+            )
             
             # TODO add for other versions
             #specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
             specZ_mask = (specZ < noise_thres) | ~np.isfinite(specZ)
 
-            peak_finding_params['vel_step'] = vel_step
             #specZ[specZ_mask] = 0
 
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
@@ -1196,11 +1173,9 @@ class peakTreeBuffer():
                 velocity = upck[0]
                 specZ, specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask = upck[1]
 
-            window_length = h.round_odd(peak_finding_params['span']/vel_step)
-            log.debug(f"window_length {window_length},  polyorder  {peak_finding_params['smooth_polyorder']}")
-
             specZ_raw = specZ.copy()
 
+            peak_finding_params['vel_step'] = vel_step
             # for noise separeated peaks 0 is a better fill value
             if type(tail_filter) == list:
                 noise_tail = h.gauss_func_offset(velocity, *tail_filter)
@@ -1211,44 +1186,16 @@ class peakTreeBuffer():
             else:
                 tail_filter_applied = False
         
-            # --------------------------------------------------------------------
-            # smoothing and cutting. the order can be defined in instrument_config
-            if self.settings['smooth_cut_sequence'] == 'cs':
-                # include the Baur-Blur
-                noise_mask = specZ < noise_thres
-                noise_mask = h.blur_mask(noise_mask, 3)
-                specZ[noise_mask] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0:
-                specZ = h.lin2z(specZ)
-                if peak_finding_params['smooth_polyorder'] < 10:
-                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                                polyorder=peak_finding_params['smooth_polyorder'], 
-                                mode='nearest')
-                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
-                    if indices:
-                        _, specZ, _ = loess_1d(velocity, specZ, 
-                                    degree=peak_finding_params['smooth_polyorder']-10, 
-                                    npoints=window_length)
-                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
-                    window = h.gauss_func(np.arange(11), 5, window_length)
-                    window /= np.sum(window)
-                    specZ = np.convolve(specZ, window, mode='same')
-                else:
-                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
-                specZ = h.z2lin(specZ)
-            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
-            # this collides with the tail filter
-            #specZ[gaps] = specZ_raw[gaps]
-            if self.settings['smooth_cut_sequence'] == 'sc':
-                noise_mask = specZ < noise_thres
-                noise_mask = h.blur_mask(noise_mask, 5)
-                specZ[noise_mask] = np.nan #noise_thres / 6. 
+            specZ, noise_mask = h.smoothing_cutting(
+                specZ, noise_thres, velocity, 
+                self.setting['smooth_cut_sequence'], peak_finding_params, log,
+                baurblur=True
+            )
             
             # TODO add for other versions
             #specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
             specZ_mask = (noise_mask) | ~np.isfinite(specZ)
 
-            peak_finding_params['vel_step'] = vel_step
             #specZ[specZ_mask] = 0
 
             spectrum = {'ts': self.timestamps[it], 'range': self.range[ir],
@@ -1545,39 +1492,17 @@ class peakTreeBuffer():
 
             specZ_raw = specZ.copy()
 
-            # --------------------------------------------------------------------
-            # smoothing and cutting. the order can be defined in instrument_config
-            if self.settings['smooth_cut_sequence'] == 'cs':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0:
-                specZ = h.lin2z(specZ)
-                if peak_finding_params['smooth_polyorder'] < 10:
-                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                                polyorder=peak_finding_params['smooth_polyorder'], 
-                                mode='nearest')
-                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
-                    if indices:
-                        _, specZ, _ = loess_1d(velocity, specZ, 
-                                    degree=peak_finding_params['smooth_polyorder']-10, 
-                                    npoints=window_length)
-                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
-                    window = h.gauss_func(np.arange(11), 5, window_length)
-                    window /= np.sum(window)
-                    specZ = np.convolve(specZ, window, mode='same')
-                else:
-                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
-                specZ = h.z2lin(specZ)
-            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
-            specZ[gaps] = specZ_raw[gaps]
-            if self.settings['smooth_cut_sequence'] == 'sc':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            peak_finding_params['vel_step'] = vel_step
+            specZ, noise_mask = h.smoothing_cutting(
+                specZ, noise_thres, velocity, 
+                self.setting['smooth_cut_sequence'], peak_finding_params, log
+            )
             
             specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
  
             specSNRco = specZ/noise_mean 
             specSNRco_mask = specZ.copy() 
  
-            peak_finding_params['vel_step'] = vel_step
             #print('Z', h.lin2z(specZ))
 
             spectrum = { 
@@ -1730,34 +1655,11 @@ class peakTreeBuffer():
 
             specZ_raw = specZ.copy()
 
-            # --------------------------------------------------------------------
-            # smoothing and cutting. the order can be defined in instrument_config
-            if self.settings['smooth_cut_sequence'] == 'cs':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
-            if peak_finding_params['smooth_polyorder'] != 0 and window_length > 1:
-                if peak_finding_params['smooth_in_dB']:
-                    specZ = h.lin2z(specZ)
-                if peak_finding_params['smooth_polyorder'] < 10:
-                    specZ = scipy.signal.savgol_filter(specZ, window_length, 
-                                polyorder=peak_finding_params['smooth_polyorder'], 
-                                mode='nearest')
-                elif 10 < peak_finding_params['smooth_polyorder'] < 20:
-                    if indices:
-                        _, specZ, _ = loess_1d(velocity, specZ, 
-                                    degree=peak_finding_params['smooth_polyorder']-10, 
-                                    npoints=window_length)
-                elif 20 < peak_finding_params['smooth_polyorder'] < 30:
-                    window = h.gauss_func(np.arange(11), 5, window_length)
-                    window /= np.sum(window)
-                    specZ = np.convolve(specZ, window, mode='same')
-                else:
-                    raise ValueError(f"smooth_polyorder = {peak_finding_params['smooth_polyorder']} not defined")
-                if peak_finding_params['smooth_in_dB']:
-                    specZ = h.z2lin(specZ)
-            gaps = (specZ <= 0.) | ~np.isfinite(specZ)
-            specZ[gaps] = specZ_raw[gaps]
-            if self.settings['smooth_cut_sequence'] == 'sc':
-                specZ[specZ < noise_thres] = np.nan #noise_thres / 6. 
+            peak_finding_params['vel_step'] = vel_step
+            specZ, noise_mask = h.smoothing_cutting(
+                specZ, noise_thres, velocity, 
+                self.setting['smooth_cut_sequence'], peak_finding_params, log
+            )
             
             # TODO add for other versions
             specZ_mask = (specZ <= 1e-10) | mask | (specZ < noise_thres) | ~np.isfinite(specZ)
@@ -1765,7 +1667,6 @@ class peakTreeBuffer():
             # otherwise peak finding identifies fully masked subpeaks
             specZ[specZ_mask] = np.nan  
 
-            peak_finding_params['vel_step'] = vel_step
             #specZ[specZ_mask] = 0
 
             # also SNR
