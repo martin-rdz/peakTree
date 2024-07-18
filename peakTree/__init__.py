@@ -991,7 +991,7 @@ class peakTreeBuffer():
         
             specZ, noise_mask = h.smoothing_cutting(
                 specZ, noise_thres, velocity, 
-                self.setting['smooth_cut_sequence'], peak_finding_params, log,
+                self.settings['smooth_cut_sequence'], peak_finding_params, log,
                 #baurblur=True # was only implemented for znc
             )
             
@@ -1188,7 +1188,7 @@ class peakTreeBuffer():
         
             specZ, noise_mask = h.smoothing_cutting(
                 specZ, noise_thres, velocity, 
-                self.setting['smooth_cut_sequence'], peak_finding_params, log,
+                self.settings['smooth_cut_sequence'], peak_finding_params, log,
                 baurblur=True
             )
             
@@ -1495,7 +1495,7 @@ class peakTreeBuffer():
             peak_finding_params['vel_step'] = vel_step
             specZ, noise_mask = h.smoothing_cutting(
                 specZ, noise_thres, velocity, 
-                self.setting['smooth_cut_sequence'], peak_finding_params, log
+                self.settings['smooth_cut_sequence'], peak_finding_params, log
             )
             
             specZ_mask = (specZ_mask) | (specZ < noise_thres) | ~np.isfinite(specZ)
@@ -1658,7 +1658,7 @@ class peakTreeBuffer():
             peak_finding_params['vel_step'] = vel_step
             specZ, noise_mask = h.smoothing_cutting(
                 specZ, noise_thres, velocity, 
-                self.setting['smooth_cut_sequence'], peak_finding_params, log
+                self.settings['smooth_cut_sequence'], peak_finding_params, log
             )
             
             # TODO add for other versions
