@@ -769,7 +769,7 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params, gaps=None):
 
     #print('noise ', spectrum['noise_thres'], h.lin2z(spectrum['noise_thres']))
     # scipy.signal.find_peaks cannot deal with nans, i.e. lin2z([... 0 ... ]) causes problems
-    masked_Z_pf = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask'] & (spectrum['specZ'] < spectrum['noise_thres'])), spectrum['noise_thres']/4.)
+    masked_Z_pf = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask'] | (spectrum['specZ'] < spectrum['noise_thres'])), spectrum['noise_thres']/4.)
     #print('masked_Z_p', h.lin2z(masked_Z_pf).tolist())
     masked_Z = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask']), 0)
 
