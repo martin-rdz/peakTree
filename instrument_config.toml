@@ -460,3 +460,48 @@
     smooth_polyorder = 2  # 0 deactivate | 2 second order
     prom_thres = 0.3      # dB
     width_thres = 0.0     # m s-1
+	
+	
+	
+[rpg94_hyytiala] 
+    location = "Hyytiälä"
+    shortname = "Hyy"
+    loader = 'rpg'
+[rpg94_hyytiala.settings] 
+    grid_time = false
+    max_no_nodes = 15 
+    tot_spec_scaling = 1
+    polarimetry = 'LDR' 
+    smooth_cut_sequence = 'sc' # cs cut-smooth | sc smooth-cut
+    decoupling = -28.5
+    station_altitude = 150
+[rpg94_hyytiala.settings.peak_finding_params.chirp0]
+    thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 4 # false | factor in linear units
+    smooth_in_dB = false
+    # new: seconds instead of index
+    t_avg = 9            # s
+    #h_avg = 89          # m
+    h_avg = 0            # m
+    span = 0.23          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 0.8     # dB
+    width_thres = 0      # m s-1
+[rpg94_hyytiala.settings.peak_finding_params.chirp1]
+    thres_factor_co = false # false | factor in linear units
+    thres_factor_cx = 4 # false | factor in linear units
+    smooth_in_dB = false
+    t_avg = 5            # s
+    h_avg = 0            # m
+    span = 0.23          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 0.8     # dB
+    width_thres = 0      # m s-1
+[rpg94_hyytiala.settings.peak_finding_params.chirp2]
+    thres_factor_co = false # false | factor in linear units
+    t_avg = 0            # s
+    h_avg = 0            # m
+    span = 0.30          # m s-1
+    smooth_polyorder = 2
+    prom_thres = 0.5     # dB
+    width_thres = 0      # m s-1

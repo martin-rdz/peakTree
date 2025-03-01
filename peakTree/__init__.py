@@ -649,6 +649,11 @@ class peakTreeBuffer():
                 self.noise_level_2d = self.noise_combined/np.sqrt(self.no_avg_subs_2d)
                 self.noise_thres_2d = self.Q*self.noise_level_2d
 
+            # here another option for polarimetry = 'LDR' needs to be added
+            elif self.settings['polarimetry'] == 'LDR':
+                raise ValueError('polarimetry = LDR not implemented yet')
+
+
             elif self.settings['polarimetry'] == 'false':
                 if 'TotNoisePow' in data:
                     self.noise_v = data['TotNoisePow'] 
@@ -656,7 +661,9 @@ class peakTreeBuffer():
                     self.noise_v = h.estimate_noise_array(self.spec_tot)
                 self.specZ_2d = self.spec_tot
                 self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
-                # here another option for polarimetry = 'LDR' needs to be added
+
+            else:
+                raise ValueError('polarimetry specification not given')
 
         else:
             raise ValueError('load_to_ram = False not implemented yet')

@@ -6,6 +6,7 @@ data
 doc
 docs/build
 playground
+playground_legacy
 output
 plots
 *.zip
