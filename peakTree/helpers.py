@@ -180,7 +180,7 @@ def estimate_mean_noise(spec, mov_avg=1):
 
 def estimate_noise_array(spectra_array):
     """
-    Wrapper for estimate_noise, to apply to a chunk of Doppler spectra
+    Wrapper for estimate_mean_noise, to apply to a chunk of Doppler spectra
     Args:
          spectra_array (ndarray): 3D array of Doppler spectra
     Returns:

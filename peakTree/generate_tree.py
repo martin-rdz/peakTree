@@ -407,7 +407,7 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     return moments, spectrum
 
 
-@jit(fastmath=True)
+@jit(fastmath=True, forceobj=True)
 def calc_moments_STSR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -482,7 +482,7 @@ def calc_moments_STSR(spectrum, bounds, thres, no_cut=False):
 
 
 
-@jit(fastmath=True)
+#@jit(fastmath=True)
 def calc_moments_wo_LDR(spectrum, bounds, thres, no_cut=False):
     """calc the moments following the formulas given by Görsdorf2015 and Maahn2017
 
@@ -770,6 +770,8 @@ def tree_from_spectrum_peako(spectrum, peak_finding_params, gaps=None):
     #print('noise ', spectrum['noise_thres'], h.lin2z(spectrum['noise_thres']))
     # scipy.signal.find_peaks cannot deal with nans, i.e. lin2z([... 0 ... ]) causes problems
     masked_Z_pf = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask'] | (spectrum['specZ'] < spectrum['noise_thres'])), spectrum['noise_thres']/4.)
+    if 'specSNRco_mask' in spectrum:
+        masked_Z_pf = h.fill_with(masked_Z_pf, spectrum['specSNRco_mask'], spectrum['noise_thres']/4.)
     #print('masked_Z_p', h.lin2z(masked_Z_pf).tolist())
     masked_Z = h.fill_with(spectrum['specZ'], (spectrum['specZ_mask']), 0)
 

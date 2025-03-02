@@ -555,7 +555,17 @@ class peakTreeBuffer():
         self.type = 'rpgpy'
         header, data = read_rpg(filename)
         log.info(f'loaded file {filename} with rpgpy {version.__version__}')
-
+        # remove non unique time indices
+        #
+        time = data['Time']
+        unique_time, unique_index = np.unique(time, return_index=True)
+        if not len(time) == len(unique_time):
+            print(f'removing {len(time) - len(unique_time)} non-unique time entries...')
+            for key, value in data.items():
+                # Check if the value is a numpy array and the length of its first dimension matches the original Time array
+                if isinstance(value, np.ndarray) and value.shape[0] == len(time):
+                    # Filter the array using the unique indices
+                    data[key] = value[unique_index]
         self.inputinfo = {
             'rpgpy': version.__version__, 'sw': header['SWVersion'],
         }
@@ -596,8 +606,17 @@ class peakTreeBuffer():
         self.range_chirp_mapping = np.repeat(np.arange(self.no_chirps), bins_per_chirp)
         self.begin_dt = h.ts_to_dt(self.timestamps[0])
 
-        scaling = self.settings['tot_spec_scaling']
-        log.warning(f"WARNING: Taking scaling factor from config file. It should be 1 for RPG software version > 5.40, "
+        # TODO: Revisit distinction between STSR, LDR and SP radar: For STSR, VNoisePow is stored in the "TotNoisePow"
+        #  variable (this is a problem in rpgpy with variable naming). VNoisePow and HNoisePow have to be added up
+        #  to get the total noise. For SP, the total noise is stored in TotNoisePow and there is no variable named
+        #  HNoisePow. [LDR mode radar??]
+        #  If no compression is applied in the software, complete spectra are saved and the noise power is not at
+        #  all stored in the files (no matter which polarimetric type of RPG radar) and needs to be computed here.
+        #  TBD: Do we need to also apply the scaling factor to the noise?
+
+        if self.settings['polarimetry'] == 'STSR':
+            scaling = self.settings['tot_spec_scaling']
+            log.warning(f"WARNING: Taking scaling factor from config file. It should be 1 for RPG software version > 5.40, "
                     f"and 0.5 for earlier software versions (around 2020). Only applicable for STSR radar. Configured "
                     f"are {scaling}")
 
@@ -605,26 +624,20 @@ class peakTreeBuffer():
             self.spectra_in_ram = True
             #print(type(data['TotSpec']), data['TotSpec'])
             self.spec_tot = data['TotSpec']
-            self.spec_tot = scaling*self.spec_tot
-
-            # TODO: Check distinction between STSR and SP radar: For STSR, VNoisePow is stored in the "TotNoisePow"
-            #  variable (this is a problem in rpgpy with variable naming). VNoisePow and HNoisePow have to be added up
-            #  to get the total noise. For SP, the total noise is stored in TotNoisePow and there is no variable named
-            #  HNoisePow. [LDR mode radar??]
-            #  If no compression is applied in the software, complete spectra are saved and the noise power is not at
-            #  all stored in the files (no matter which polarimetric type of RPG radar) and needs to be computed here.
-            #  TBD: Do we need to also apply the scaling factor to the noise?
 
             if self.settings['polarimetry'] == 'STSR':
+                self.spec_tot = scaling*self.spec_tot
+                self.spec_h = data['HSpec']
                 # possibly missing scaling factor here:
                 if 'TotNoisePow' in data:
-                    self.noise_v = data['TotNoisePow'] 
+                    self.noise_v = data['TotNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
+                    self.noise_h = data['HNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
                 else:
                     self.noise_v = h.estimate_noise_array(self.spec_tot)
-                self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp) 
-                self.noise_h = data['HNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
+                    self.noise_h = h.estimate_noise_array(self.spec_h)
+                    self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp) 
+                    self.noise_h /= np.repeat(self.doppFFT, bins_per_chirp) 
 
-                self.spec_h = data['HSpec']
                 self.spec_cov_re = data['ReVHSpec']
                 self.spec_cov_im = data['ImVHSpec']
                 self.spec_v = 4 * self.spec_tot - self.spec_h - 2 * self.spec_cov_re
@@ -651,14 +664,39 @@ class peakTreeBuffer():
 
             # here another option for polarimetry = 'LDR' needs to be added
             elif self.settings['polarimetry'] == 'LDR':
-                raise ValueError('polarimetry = LDR not implemented yet')
+                ## TODO this is very preliminary and just for testing. Check equations carefully!
+                # Alexander Myagkov email 02-02-2022: Note, that for LDR radars we always store VSpec,HSpec and
+                # VNoisePow and HNoisePow. The change to TotSpec is ONLY for STSR radars.
+                # (this is probably named incorrectly in rpgpy, VSpec is named TotSpec)
+                self.spec_v = data['TotSpec']
+                self.spec_tot = data['TotSpec'] + data['HSpec'] # V+H
+                self.spec_h = data['HSpec']
 
+                self.specZ_2d = self.spec_tot
+                self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
+                self.specZ_2d = self.spec_v
+                self.specZcx_2d = self.spec_h
+
+                if 'TotNoisePow' in data: # this is actually v_noise
+                    self.noise_v = data['TotNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
+                    self.noise_h = data['HNoisePow']/np.repeat(self.doppFFT, bins_per_chirp)
+                else:
+                    self.noise_v = h.estimate_noise_array(self.spec_v)
+                    self.noise_h = h.estimate_noise_array(self.spec_h)
+
+                    self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp)
+                    self.noise_h /= np.repeat(self.doppFFT, bins_per_chirp)
+
+                self.noise_combined = self.noise_v + self.noise_h
+                self.noise_thres_2d = self.Q*(self.noise_combined) /np.sqrt(self.no_avg_subs_2d)
 
             elif self.settings['polarimetry'] == 'false':
                 if 'TotNoisePow' in data:
                     self.noise_v = data['TotNoisePow'] 
                 else:
                     self.noise_v = h.estimate_noise_array(self.spec_tot)
+                self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp)
+                self.noise_thres_2d = self.Q*self.noise_v/np.sqrt(self.no_avg_subs_2d)
                 self.specZ_2d = self.spec_tot
                 self.specZ_2d_mask = (self.specZ_2d <= 1e-10)
 
@@ -1586,6 +1624,7 @@ class peakTreeBuffer():
             
             # average_spectra step
             spec_chunk = self.specZ_2d[it_slicer, ir_slicer, :]
+            print(f"chirp: {ind_chirp + 1}, shape: {spec_chunk.shape}")
             mask_chunk = self.specZ_2d_mask[it_slicer,ir_slicer,:]
             no_averages = np.prod(spec_chunk.shape[:-1])
             specZ = np.average(spec_chunk, axis=(0,1))
@@ -1593,7 +1632,7 @@ class peakTreeBuffer():
             log.debug(f'no_averages {spec_chunk.shape[:-1]} {np.prod(spec_chunk.shape[:-1])}')
 
             # some parallel processing for debugging
-            if self.settings['polarimetry'] == 'STSR':
+            if self.settings['polarimetry'] in ['LDR', 'STSR']:
                 spec_cx_chunk = self.specZcx_2d[it_slicer,ir_slicer,:]
                 specZcx = np.average(spec_cx_chunk, axis=(0, 1))
 
@@ -1641,7 +1680,7 @@ class peakTreeBuffer():
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
                 log.info(f'>> roll velocity active {roll_velocity}')
-                if self.settings['polarimetry'] == 'STSR':
+                if self.settings['polarimetry'] in ['STSR', 'LDR']:
                     upck = _roll_velocity(vel_chirp, vel_step, roll_velocity,
                                       #[specZ, specZv, specRhv, mask])
                                       [specZ, specZcx, mask])
@@ -1677,8 +1716,9 @@ class peakTreeBuffer():
             #specZ[specZ_mask] = 0
 
             # also SNR
-            if self.settings['polarimetry'] == 'STSR':
+            if self.settings['polarimetry'] in ['STSR', 'LDR']:
                 #specZcx_masked = specZcx.copy()
+                noise_mean = np.average(self.noise_combined[it_slicer, ir_slicer], axis=(0, 1))
                 if ('thres_factor_cx' in peak_finding_params
                         and peak_finding_params['thres_factor_cx']):
                     noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
@@ -1686,6 +1726,7 @@ class peakTreeBuffer():
                     noise_cx_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
                 
                 specZcx_mask = (specZcx <= 1e-10) | ~np.isfinite(specZcx) | (specZcx < noise_cx_thres)
+                specSNRco = specZ / noise_mean
                 log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
                 trust_ldr_mask = specZcx_mask | specZ_mask
 
@@ -1696,7 +1737,7 @@ class peakTreeBuffer():
                 #print('specZ', h.lin2z(specLDRmasked))
                 #print('specZh', h.lin2z((specZh + specZv)*(1-specRhv)/(specZh + specZv)*(1+specRhv)))
 
-                assert np.isfinite(noise_thres), "noisethreshold is not a finite number"
+                assert np.isfinite(noise_thres), "noise threshold is not a finite number"
                 spectrum = {
                     'ts': self.timestamps[it], 'range': self.range[ir], 
                     'vel': vel_chirp, 'ind_chirp': ind_chirp,
@@ -1708,7 +1749,8 @@ class peakTreeBuffer():
                     'specZcx': specZcx, 'specZcx_mask': specZcx_mask,
                     #'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
                     'no_temp_avg': no_averages,
-                    #'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                    'specSNRco': specSNRco,
+                    'specSNRco_mask': 10*np.log10(specSNRco) < 10,
                     'noise_cx_thres': noise_cx_thres, 
                     'trust_ldr_mask': trust_ldr_mask,
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
@@ -1717,6 +1759,7 @@ class peakTreeBuffer():
                     'decoupling': self.settings['decoupling'],
                 }
             elif self.settings['polarimetry'] == 'false':
+                noise_mean = np.average(self.noise_v[it_slicer, ir_slicer], axis=(0, 1))
                 specSNRco = specZ/noise_mean
                 specSNRco_mask = specZ_mask.copy()
                 assert np.isfinite(noise_thres), "noise threshold is not a finite number"
@@ -1728,7 +1771,8 @@ class peakTreeBuffer():
                     'specZ_mask': specZ_mask,
                     'specZ_raw': specZ_raw,
                     'no_temp_avg': no_averages,
-                    'specSNRco': specSNRco, 'specSNRco_mask': specSNRco_mask,
+                    'specSNRco': specSNRco,
+                    'specSNRco_mask': specSNRco_mask,
                     #'specZcx_validcx': specZcx_validcx, 'specZ_validcx': specZ_validcx,
                     #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
                     #'noise_h': noise_h, 'noise_v': noise_v,
