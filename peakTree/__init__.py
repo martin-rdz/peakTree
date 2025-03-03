@@ -687,8 +687,8 @@ class peakTreeBuffer():
                     self.noise_v /= np.repeat(self.doppFFT, bins_per_chirp)
                     self.noise_h /= np.repeat(self.doppFFT, bins_per_chirp)
 
-                self.noise_combined = self.noise_v + self.noise_h
-                self.noise_thres_2d = self.Q*(self.noise_combined) /np.sqrt(self.no_avg_subs_2d)
+                self.noise_level_2d = self.noise_v + self.noise_h
+                self.noise_thres_2d = self.Q*(self.noise_level_2d) /np.sqrt(self.no_avg_subs_2d)
 
             elif self.settings['polarimetry'] == 'false':
                 if 'TotNoisePow' in data:
@@ -1703,7 +1703,7 @@ class peakTreeBuffer():
 
             peak_finding_params['vel_step'] = vel_step
             specZ, noise_mask = h.smoothing_cutting(
-                specZ, noise_thres, velocity, 
+                specZ, noise_thres, vel_chirp, 
                 self.settings['smooth_cut_sequence'], peak_finding_params, log
             )
             
@@ -1718,7 +1718,6 @@ class peakTreeBuffer():
             # also SNR
             if self.settings['polarimetry'] in ['STSR', 'LDR']:
                 #specZcx_masked = specZcx.copy()
-                noise_mean = np.average(self.noise_combined[it_slicer, ir_slicer], axis=(0, 1))
                 if ('thres_factor_cx' in peak_finding_params
                         and peak_finding_params['thres_factor_cx']):
                     noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
@@ -1726,7 +1725,7 @@ class peakTreeBuffer():
                     noise_cx_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
                 
                 specZcx_mask = (specZcx <= 1e-10) | ~np.isfinite(specZcx) | (specZcx < noise_cx_thres)
-                specSNRco = specZ / noise_mean
+                specSNRco = specZ / noise_level
                 log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
                 trust_ldr_mask = specZcx_mask | specZ_mask
 
@@ -1759,8 +1758,7 @@ class peakTreeBuffer():
                     'decoupling': self.settings['decoupling'],
                 }
             elif self.settings['polarimetry'] == 'false':
-                noise_mean = np.average(self.noise_v[it_slicer, ir_slicer], axis=(0, 1))
-                specSNRco = specZ/noise_mean
+                specSNRco = specZ/noise_level
                 specSNRco_mask = specZ_mask.copy()
                 assert np.isfinite(noise_thres), "noise threshold is not a finite number"
                 spectrum = {

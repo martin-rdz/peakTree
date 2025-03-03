@@ -14,11 +14,12 @@ Radenz, M., Bühl, J., Seifert, P., Griesche, H., and Engelmann, R.: peakTree: a
 
 peakTree requires python3 with following packages:
 ```python
-numpy==1.14.5
-graphviz==0.8.2
-matplotlib==2.2.2
-netCDF4==1.4.2
-numba==0.37.0
+numpy==2.1
+matplotlib
+netCDF4
+numba
+pandas
+loess
 toml
 ```
 
