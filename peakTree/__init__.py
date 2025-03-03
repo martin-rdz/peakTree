@@ -61,7 +61,10 @@ def check_part_not_reproduced(tree, spectrum):
     leave_ids = list(set(tree.keys()) - set(parents))
     spec_from_mom = np.zeros(spectrum['specZ'].shape)
     vel, vel_mask = h.masked_to_plain(spectrum['vel'])
-    delta_v = vel[~vel_mask][2] - vel[~vel_mask][1]
+    if 'vel_step' not in spectrum:
+        delta_v = vel[~vel_mask][2] - vel[~vel_mask][1]
+    else:
+        delta_v = spectrum['vel_step']
     
     for i in leave_ids:
         if tree[i]['width'] < 0.001:
@@ -582,10 +585,8 @@ class peakTreeBuffer():
         self.range = header['RAlts']
         self.velocity = header['velocity_vectors'].T
         log.debug(f'velocity shape {self.velocity.shape}')
-        self.velocity = np.ma.masked_where(
-            np.isclose(np.diff(np.vstack((np.zeros(self.velocity.shape[1]), self.velocity)), 
-                               axis=0), 0), 
-            self.velocity)
+        self.velocity_mask = np.isclose(np.diff(
+            np.vstack((np.zeros(self.velocity.shape[1]), self.velocity)), axis=0), 0)
 
         self.chirp_start_indices = header['RngOffs']
         self.no_chirps = self.chirp_start_indices.shape[0]
@@ -1675,9 +1676,13 @@ class peakTreeBuffer():
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
             log.debug(f'current chirp [zero-based index] {ind_chirp}')
             vel_chirp = self.velocity[:, ind_chirp]
+            vel_chirp_mask = self.velocity_mask[:, ind_chirp]
+
             print('vel_chirp', vel_chirp)
             if isinstance(vel_chirp, np.ma.core.MaskedArray):
                 vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
+            elif np.any(vel_chirp_mask):
+                vel_step = vel_chirp[~vel_chirp_mask][1] - vel_chirp[~vel_chirp_mask][0]
             else:
                 log.debug(f'vel_chirp not masked')
                 vel_step = vel_chirp[1] - vel_chirp[0]
@@ -1702,7 +1707,6 @@ class peakTreeBuffer():
             # TODO: figure out why teresa uses len(velbins) and not /delta_v
             assert 'span' in peak_finding_params, \
                 "span and smooth_polyorder have to be defined in config"
-            print(vel_step)
             #window_length = h.round_odd(peak_finding_params['span']/vel_step)
             #log.info(f"span {peak_finding_params['span']} window_length {window_length} polyorder {peak_finding_params['smooth_polyorder']}")
 
@@ -1746,7 +1750,7 @@ class peakTreeBuffer():
                 assert np.isfinite(noise_thres), "noise threshold is not a finite number"
                 spectrum = {
                     'ts': self.timestamps[it], 'range': self.range[ir], 
-                    'vel': vel_chirp, 'ind_chirp': ind_chirp,
+                    'vel': vel_chirp, 'ind_chirp': ind_chirp, 'vel_step': vel_step,
                     'polarimetry': self.settings['polarimetry'],
                     'specZ': specZ, 'noise_thres': noise_thres,
                     'noise_lvl': noise_level,
@@ -1770,7 +1774,7 @@ class peakTreeBuffer():
                 assert np.isfinite(noise_thres), "noise threshold is not a finite number"
                 spectrum = {
                     'ts': self.timestamps[it], 'range': self.range[ir],
-                    'vel': vel_chirp,
+                    'vel': vel_chirp, 'ind_chirp': ind_chirp, 'vel_step': vel_step,
                     'polarimetry': self.settings['polarimetry'],
                     'specZ': specZ, 'noise_thres': noise_thres,
                     'specZ_mask': specZ_mask,
