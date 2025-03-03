@@ -688,7 +688,8 @@ class peakTreeBuffer():
                     self.noise_h /= np.repeat(self.doppFFT, bins_per_chirp)
 
                 self.noise_level_2d = self.noise_v + self.noise_h
-                self.noise_thres_2d = self.Q*(self.noise_level_2d) /np.sqrt(self.no_avg_subs_2d)
+                self.noise_level_2d /= np.sqrt(self.no_avg_subs_2d)
+                self.noise_thres_2d = self.Q*(self.noise_level_2d) 
 
             elif self.settings['polarimetry'] == 'false':
                 if 'TotNoisePow' in data:
@@ -1720,9 +1721,9 @@ class peakTreeBuffer():
                 #specZcx_masked = specZcx.copy()
                 if ('thres_factor_cx' in peak_finding_params
                         and peak_finding_params['thres_factor_cx']):
-                    noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
+                    noise_cx_thres = peak_finding_params['thres_factor_cx'] * np.average(self.noise_level_2d[it_slicer, ir_slicer], axis=(0,1))
                 else:
-                    noise_cx_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
+                    noise_cx_thres = np.average(self.noise_level_2d[it_slicer, ir_slicer], axis=(0,1))
                 
                 specZcx_mask = (specZcx <= 1e-10) | ~np.isfinite(specZcx) | (specZcx < noise_cx_thres)
                 specSNRco = specZ / noise_level
