@@ -582,6 +582,10 @@ class peakTreeBuffer():
         self.range = header['RAlts']
         self.velocity = header['velocity_vectors'].T
         log.debug(f'velocity shape {self.velocity.shape}')
+        self.velocity = np.ma.masked_where(
+            np.isclose(np.diff(np.vstack((np.zeros(self.velocity.shape[1]), self.velocity)), 
+                               axis=0), 0), 
+            self.velocity)
 
         self.chirp_start_indices = header['RngOffs']
         self.no_chirps = self.chirp_start_indices.shape[0]
@@ -1671,6 +1675,7 @@ class peakTreeBuffer():
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
             log.debug(f'current chirp [zero-based index] {ind_chirp}')
             vel_chirp = self.velocity[:, ind_chirp]
+            print('vel_chirp', vel_chirp)
             if isinstance(vel_chirp, np.ma.core.MaskedArray):
                 vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             else:
@@ -1697,8 +1702,9 @@ class peakTreeBuffer():
             # TODO: figure out why teresa uses len(velbins) and not /delta_v
             assert 'span' in peak_finding_params, \
                 "span and smooth_polyorder have to be defined in config"
-            window_length = h.round_odd(peak_finding_params['span']/vel_step)
-            log.info(f"span {peak_finding_params['span']} window_length {window_length} polyorder {peak_finding_params['smooth_polyorder']}")
+            print(vel_step)
+            #window_length = h.round_odd(peak_finding_params['span']/vel_step)
+            #log.info(f"span {peak_finding_params['span']} window_length {window_length} polyorder {peak_finding_params['smooth_polyorder']}")
 
             specZ_raw = specZ.copy()
 
