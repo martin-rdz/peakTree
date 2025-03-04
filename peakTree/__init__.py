@@ -166,7 +166,7 @@ def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
     Returns:
         list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
     """
-    print(ts_range[0], ts_range[1])
+    print('get_time_grid ', ts_range[0], ts_range[1])
     grid = np.arange(ts_range[0], ts_range[1]+1, time_interval)
     grid_mid = grid[:-1] + np.diff(grid)/2
 
@@ -190,8 +190,8 @@ def get_averaging_boundaries(array, slice_length, zero_index=0):
     is_left = np.digitize(array-slice_length/2., array)
     is_right = np.digitize(array+slice_length/2., array, right=True)
 
-    print(is_left[0], is_right[0])
-    print(array[is_left[0]], array[0], array[is_right[0]])
+    #print(is_left[0], is_right[0])
+    #print(array[is_left[0]], array[0], array[is_right[0]])
 
     return zero_index + is_left, zero_index + is_right
 
@@ -282,8 +282,7 @@ class peakTreeBuffer():
             self.load_spec_file(filename, load_to_ram=load_to_ram)
 
     def load_calibration(self):
-        print(self.settings)
-        print(self.settings['cal_file'])
+        print('load calibration ', self.settings['cal_file'])
         
         data = pd.read_csv(
             self.config_parent / self.settings['cal_file'], delimiter=';',
@@ -598,7 +597,7 @@ class peakTreeBuffer():
         self.rangeFFT = header['ChirpFFTSize'][:]
         self.no_avg = header['ChirpReps'][:]
         self.no_avg_subs = (2 * self.no_avg/self.doppFFT - 1) * (2 * self.rangeFFT -1)
-        print((self.timestamps.shape[0], self.range.shape[0]))
+        # print((self.timestamps.shape[0], self.range.shape[0]))
         self.no_avg_subs_3d = np.broadcast_to(
             np.repeat(self.no_avg_subs, bins_per_chirp)[np.newaxis, :, np.newaxis], 
             (self.timestamps.shape[0], self.range.shape[0], np.max(self.doppFFT)))
@@ -791,7 +790,7 @@ class peakTreeBuffer():
 
                 print('shapes, noise per bin', self.integrated_noise_h.shape, np.repeat(self.n_samples_in_chirp, bins_per_chirp).shape)
                 self.noise_h_per_bin = (self.integrated_noise_h/np.repeat(self.n_samples_in_chirp, bins_per_chirp))
-                print(self.noise_h_per_bin.shape)
+                #print(self.noise_h_per_bin.shape)
                 #self.noise_h_per_bin = np.repeat(noise_h_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
                 self.noise_v_per_bin = (noise_v/np.repeat(self.n_samples_in_chirp, bins_per_chirp)) 
             #self.noise_v_per_bin = np.repeat(noise_v_per_bin[:,:,np.newaxis], self.velocity.shape[0], axis=2)
@@ -1142,7 +1141,7 @@ class peakTreeBuffer():
 
             # why is ravel necessary here?
             # flatten seems to faster
-            print(it_slicer, ir_slicer)
+            print('slicer ', it_slicer, ir_slicer)
 
             if self.spectra_in_ram:
                 specZ_2d = self.Z[it_slicer,ir_slicer,:][:]
@@ -1630,7 +1629,7 @@ class peakTreeBuffer():
             
             # average_spectra step
             spec_chunk = self.specZ_2d[it_slicer, ir_slicer, :]
-            print(f"chirp: {ind_chirp + 1}, shape: {spec_chunk.shape}")
+            print(f"chirp: {ind_chirp + 1}, shape spec_chunk: {spec_chunk.shape}")
             mask_chunk = self.specZ_2d_mask[it_slicer,ir_slicer,:]
             no_averages = np.prod(spec_chunk.shape[:-1])
             specZ = np.average(spec_chunk, axis=(0,1))
@@ -1670,7 +1669,7 @@ class peakTreeBuffer():
                 noise_thres =  np.average(self.noise_thres_2d[it_slicer, ir_slicer], axis=(0,1))
             noise_level = np.average(self.noise_level_2d[it_slicer, ir_slicer], axis=(0,1))
             noise_level = np.repeat(noise_level[np.newaxis], specZ.shape, axis=0)
-            print('noise get spec', self.noise_level_2d.shape, h.lin2z(noise_level[:10]))
+            #print('noise get spec', self.noise_level_2d.shape, h.lin2z(noise_level[:10]))
 
             #ind_chirp = np.where(self.chirp_start_indices >= ir)[0][0] - 1
             #ind_chirp = np.searchsorted(self.chirp_start_indices, ir, side='right')-1
@@ -1678,7 +1677,6 @@ class peakTreeBuffer():
             vel_chirp = self.velocity[:, ind_chirp]
             vel_chirp_mask = self.velocity_mask[:, ind_chirp]
 
-            print('vel_chirp', vel_chirp)
             if isinstance(vel_chirp, np.ma.core.MaskedArray):
                 vel_step = vel_chirp[~vel_chirp.mask][1] - vel_chirp[~vel_chirp.mask][0]
             elif np.any(vel_chirp_mask):
@@ -1686,7 +1684,6 @@ class peakTreeBuffer():
             else:
                 log.debug(f'vel_chirp not masked')
                 vel_step = vel_chirp[1] - vel_chirp[0]
-            print('vel step', vel_step)
             if roll_velocity or ('roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']):
                 if 'roll_velocity' in peak_finding_params and peak_finding_params['roll_velocity']:
                     roll_velocity = peak_finding_params['roll_velocity']
@@ -1738,7 +1735,8 @@ class peakTreeBuffer():
                 specZcx_mask = (specZcx <= 1e-10) | ~np.isfinite(specZcx) | (specZcx < noise_cx_thres)
                 specSNRco = specZ / noise_level
                 log.info(f"noise cx thres {h.lin2z(noise_cx_thres)} {np.all(specZcx_mask)}")
-                trust_ldr_mask = specZcx_mask | specZ_mask
+                decoupling = self.settings['decoupling']
+                trust_ldr_mask = specZcx_mask | specZ_mask | (specZcx <= (specZ * 10**(decoupling/10.)))
 
                 specLDR = (specZcx)/(specZ)
                 specLDRmasked = specLDR.copy()
@@ -1746,7 +1744,6 @@ class peakTreeBuffer():
 
                 #print('specZ', h.lin2z(specLDRmasked))
                 #print('specZh', h.lin2z((specZh + specZv)*(1-specRhv)/(specZh + specZv)*(1+specRhv)))
-
                 assert np.isfinite(noise_thres), "noise threshold is not a finite number"
                 spectrum = {
                     'ts': self.timestamps[it], 'range': self.range[ir], 
@@ -1766,7 +1763,7 @@ class peakTreeBuffer():
                     'specLDR': specLDR, 'specLDRmasked': specLDRmasked,
                     #'specZh': specZh, 'cov_re': cov_re, 'cov_im': cov_im, 'rhv': rhv,
                     #'noise_h': noise_h, 'noise_v': noise_v,
-                    'decoupling': self.settings['decoupling'],
+                    'decoupling': decoupling,
                 }
             elif self.settings['polarimetry'] == 'false':
                 specSNRco = specZ/noise_level

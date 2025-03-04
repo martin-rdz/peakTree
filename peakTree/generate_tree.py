@@ -315,9 +315,9 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     """
     mask = spectrum['specZ_mask'][bounds[0]:bounds[1]+1]
     Z = spectrum['specZ'][bounds[0]:bounds[1]+1][~mask].sum()
-    print('incl noise ', h.lin2z(Z))
+    #print('incl noise ', h.lin2z(Z))
     Z = Z - spectrum['noise_lvl'][bounds[0]:bounds[1]+1][~mask].sum()
-    print('wo noise   ', h.lin2z(Z))
+    #print('wo noise   ', h.lin2z(Z))
     # TODO add the masked processing for the moments
     #spec_masked = np.ma.masked_less(spectrum['specZ'], thres, copy=True)
     if not no_cut:
@@ -363,12 +363,12 @@ def calc_moments(spectrum, bounds, thres, no_cut=False):
     #print('ldr ', h.lin2z(spectrum["specLDR"][bounds[0]:bounds[1]+1]))
     #print('ldrmax ', h.lin2z(spectrum["specLDR"][bounds[0]:bounds[1]+1][ind_max-1:ind_max+2]), bounds, ind_max)
     #print('Zcx_validcx', spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1], spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1])
-    if not np.all(spectrum['trust_ldr_mask']):
+    if np.any(~spectrum['trust_ldr_mask'][bounds[0]:bounds[1]+1]):
         #ldr2 = np.nanmean(spectrum['specLDRmasked'][bounds[0]:bounds[1]+1])
         trust_ldr = spectrum['trust_ldr_mask'][bounds[0]:bounds[1]+1]
         Zcx = spectrum['specZcx'][bounds[0]:bounds[1]+1]
         Zco = spectrum['specZ'][bounds[0]:bounds[1]+1]
-        ldr2 = np.sum(Zcx[~trust_ldr])/np.sum(Zco[~trust_ldr])
+        ldr2 = np.nansum(Zcx[~trust_ldr])/np.nansum(Zco[~trust_ldr])
         #ldr2 = (spectrum['specZcx_validcx'][bounds[0]:bounds[1]+1]).sum()/(spectrum['specZ_validcx'][bounds[0]:bounds[1]+1]).sum()
     else:
         ldr2 = np.nan
