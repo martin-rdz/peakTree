@@ -1077,10 +1077,50 @@ def tree_to_numpy(tree, max_n_nodes=15):
             np.array(variable_names + moment_names))
 
 
-def tree_to_numpy_dtypeobject(tree, max_n_nodes=15):
-    """ """
+def tree_to_numpy_dtypeobject(tree):
+    """Convert a tree to a np array of dtype object for use with xarrays apply_ufunc.
+
+    Parameters
+    ----------
+    tree : dict
+        Tree :func:`spectrum_to_tree` and :func:`add_moments` with node
+        dictionaries.
+
+    Returns
+    -------
+    numpy.ndarray
+        A one-element object array containing the tree.
+    """
 
     return np.array([tree])
+
+
+def tree_to_numpy_predefined_size(
+    tree, moment_names=[], max_n_nodes=15):
+    """ """
+
+    # unpack tree from array
+    tree = tree[0]
+    
+    # TODO separate out float and int
+    variable_names = ['bounds_left', 'bounds_right', 'parent_id', 'thres']
+
+    output = np.zeros((len(variable_names), max_n_nodes))
+    indices = np.array(list(tree.keys()))
+    indices = indices[indices < max_n_nodes]
+    #print(indices)
+    for i, var in enumerate(variable_names):
+        if len(indices) > 0:
+            output[i,indices] =  [tree[j][var] for j in indices]
+
+    output_moments = np.zeros((len(moment_names), max_n_nodes))
+    for i, var in enumerate(moment_names):
+        if len(indices) > 0:
+            pref, e = var.split('_')
+            output_moments[i,indices] =  [tree[j]['moments'][pref][e] for j in indices]
+
+    return (np.concatenate((output, output_moments)),
+            np.array(variable_names + moment_names))
 
 
 def ufunc_wrapper(vel, variables, mask, var_peak_finding=None, vel_step=None, params=None):
@@ -1100,7 +1140,28 @@ def ufunc_wrapper(vel, variables, mask, var_peak_finding=None, vel_step=None, pa
 
     
 def ufunc_wrapper_Zonly(vel, Z, mask, vel_step=None, params=None):
-    """ """
+    """ 
+    
+    
+    
+    Example
+    -------
+    
+    .. code-block:: python
+    
+        ds1 = xr.apply_ufunc(
+            ufunc_wrapper_Zonly,
+            Z.doppler,
+            Z,
+            Z < noise*1.3,
+            kwargs={'vel_step':vel_step, 'params': {'width_thres': 0.1, 'prom_thres': 1}},
+            input_core_dims=[['doppler'], ['doppler'], ['doppler']],
+            output_core_dims=[['obj']],
+            vectorize=True
+        )
+    
+    
+    """
     
 
     #print('wrapper start')
@@ -1116,3 +1177,4 @@ def ufunc_wrapper_Zonly(vel, Z, mask, vel_step=None, params=None):
 
     return tree_to_numpy_dtypeobject(tree)
     #return tree_to_numpy(tree)
+
