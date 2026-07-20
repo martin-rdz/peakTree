@@ -922,7 +922,7 @@ def spectrum_to_tree(vel_step, spectrum, mask, params):
     return traversed
     
 
-def moments(node, vel, spectrum, moms=['M0', 'M1', 'M2', 'M3', 'P']):
+def moments(bounds_l, bounds_r, thres, vel, spectrum, moms=['M0', 'M1', 'M2', 'M3', 'P']):
     """Compute selected spectral moments and a peak-to-threshold ratio within a bounded velocity range.
 
     Extracts a sub-spectrum defined by node['bounds_left'] and node['bounds_right'] (inclusive).
@@ -956,16 +956,14 @@ def moments(node, vel, spectrum, moms=['M0', 'M1', 'M2', 'M3', 'P']):
     -----
     - Thresholding uses h.fill_with(Z_chunk, Z_chunk < thres, 0).
     - M2 and M3 require M1; include 'M1' in moms if requesting 'M2' or 'M3'.
-    - Divisions by zero can occur if sum(Z_thres) == 0 (M1–M3), M2 == 0 (M3), or thres == 0 (P).
+    - Divisions by zero can occur if sum(Z_thres) == 0 (M1-M3), M2 == 0 (M3), or thres == 0 (P).
     - P uses numpy.nanargmax; all-NaN windows will raise a ValueError.
     """
 
     mom = {}
         
-    bounds_l = node['bounds_left']
-    bounds_r = node['bounds_right']
-    thres = node['thres']
     Z_chunk = spectrum[bounds_l:bounds_r+1]
+    #print(bounds_l, bounds_r, 10*np.log10(Z_chunk))
     if 'M0' in moms:
         mom['M0'] = Z_chunk.sum()
     if 'M1' in moms:
@@ -987,7 +985,7 @@ def moments(node, vel, spectrum, moms=['M0', 'M1', 'M2', 'M3', 'P']):
 
 
 
-def add_moments(tree, vel, variables):
+def add_moments(tree, vel, a, inputvars, meta):
     """Compute spectral moments for multiple variables at each node and attach results to a copied tree.
 
     For each node in `tree`, computes moments over the node's bounded window for every
@@ -1002,6 +1000,8 @@ def add_moments(tree, vel, variables):
         - 'thres' (float): Threshold used by `moments`.
     vel : array_like, shape (N,)
         1D velocity array aligned with all spectra in `variables`.
+
+    !!!! TODO part is outdated
     variables : Mapping[str, array_like]
         Mapping from variable name (e.g., 'Z', 'Zcx', 'LDR') to a 1D spectrum array
         aligned with `vel`.
@@ -1022,9 +1022,17 @@ def add_moments(tree, vel, variables):
     tree_result = copy.deepcopy(tree)
     for i, node in tree.items():
         tree_result[i]['moments'] = {}
-        for k, var in variables.items():
+        for k, var in meta.items():
+            j_in_array = np.argwhere(inputvars == k)[0][0]
+            #print(k, var, j_in_array, a.shape)
             tree_result[i]['moments'][k] = moments(
-                node, vel, var)
+                node['bounds_left'],
+                node['bounds_right'],
+                node['thres'],
+                vel,
+                a[j_in_array,:],
+                moms=var
+                )
     
     return tree_result
     
@@ -1096,11 +1104,12 @@ def tree_to_numpy_dtypeobject(tree):
 
 
 def tree_to_numpy_predefined_size(
-    tree, moment_names=[], max_n_nodes=15):
+    tree, moment_names, max_n_nodes=15):
     """ """
 
     # unpack tree from array
-    tree = tree[0]
+    # only needed for the numpy of dtype dict version
+    #tree = tree[0]
     
     # TODO separate out float and int
     variable_names = ['bounds_left', 'bounds_right', 'parent_id', 'thres']
@@ -1108,7 +1117,6 @@ def tree_to_numpy_predefined_size(
     output = np.zeros((len(variable_names), max_n_nodes))
     indices = np.array(list(tree.keys()))
     indices = indices[indices < max_n_nodes]
-    #print(indices)
     for i, var in enumerate(variable_names):
         if len(indices) > 0:
             output[i,indices] =  [tree[j][var] for j in indices]
@@ -1118,25 +1126,41 @@ def tree_to_numpy_predefined_size(
         if len(indices) > 0:
             pref, e = var.split('_')
             output_moments[i,indices] =  [tree[j]['moments'][pref][e] for j in indices]
+    #print('output shapes', output.shape, output_moments.shape)
 
     return (np.concatenate((output, output_moments)),
             np.array(variable_names + moment_names))
 
 
-def ufunc_wrapper(vel, variables, mask, var_peak_finding=None, vel_step=None, params=None):
-    """ """
+
+def ufunc_wrapper(
+        vel, a, mask, 
+        vel_step=None, params=None, var_peak=None, 
+        inputvars=[], meta=None
+    ):
+    """ 
+    
+    
+    
+    
+    """
     
 
+    #print('wrapper start, type(a)', type(a))
+    #print(inputvars, ' array shape', a.shape)
+
     tree = spectrum_to_tree(
-        vel_step, variables[var_peak_finding], mask, params
+        vel_step, a[np.argwhere(inputvars == var_peak)[0][0],:], 
+        mask, params
     )
 
     tree = add_moments(
-        tree, vel, variables
+        tree, vel, a, inputvars, meta
     )
+    #print(tree)
 
-    return tree_to_numpy(tree)
-
+    moment_names = [f"{pref}_{e}" for pref, m in meta.items() for e in m]
+    return tree_to_numpy_predefined_size(tree, moment_names)
 
     
 def ufunc_wrapper_Zonly(vel, Z, mask, vel_step=None, params=None):
