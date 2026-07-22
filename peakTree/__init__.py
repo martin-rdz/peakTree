@@ -217,6 +217,53 @@ def _roll_velocity(vel, vel_step, roll_vel, list_of_vars):
     #also specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask
     return velocity, out_vars
 
+import xarray as xr    
+
+def ds_to_tree(ds_input, params, meta):
+    """ 
+    
+    meta={
+        'Z': ['M0', 'M1', 'M2', 'M3', 'P'],
+        'Zcx': ['M0', 'P'],
+        }
+    ds_input = xr.Dataset(
+        data_vars={
+            "Z": Z,
+            "Zcx": Zcx,
+            "noise_mask": Z < noise*1.3
+        }
+    )
+    params = {'width_thres': 0.1, 'prom_thres': 1}
+
+    
+    """
+
+
+    ds_input_array = ds_input.to_array(dim="inputvar")
+    vel_step = (ds_input['doppler'][1] - ds_input['doppler'][0]).values
+
+    ds1, ds2 = xr.apply_ufunc(
+        generate_tree.ufunc_wrapper,
+        ds_input.doppler,
+        ds_input_array,
+        ds_input['noise_mask'],
+        kwargs={
+            'vel_step':vel_step, 
+            'params': params,
+            'var_peak': 'Z',
+            'inputvars': ds_input_array.coords["inputvar"].values,
+            'meta': meta },
+        input_core_dims=[['doppler'], ['inputvar', 'doppler'], ['doppler']],
+        output_core_dims=[['var', 'node'], ['var']],
+        vectorize=True
+    )
+
+    ds1.coords['var'] = ds2.isel(range=0, time=0).values
+    ds_rect = ds1.to_dataset(dim='var')
+    ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node')
+    return ds_rect
+
+
 class peakTreeBuffer():
     """trees for a time-height chunk
 

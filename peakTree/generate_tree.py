@@ -925,16 +925,17 @@ def spectrum_to_tree(vel_step, spectrum, mask, params):
 def moments(bounds_l, bounds_r, thres, vel, spectrum, moms=['M0', 'M1', 'M2', 'M3', 'P']):
     """Compute selected spectral moments and a peak-to-threshold ratio within a bounded velocity range.
 
-    Extracts a sub-spectrum defined by node['bounds_left'] and node['bounds_right'] (inclusive).
-    For M1-M3, values below node['thres'] are zeroed before intensity-weighted computations.
+    Extracts a sub-spectrum defined by bounds_left and bounds_right (inclusive).
+    For M1-M3, values below thres are zeroed before intensity-weighted computations.
 
     Parameters
     ----------
-    node : dict
-        single node of a tree, must at least contain:
-        - 'bounds_left' (int): Inclusive left index.
-        - 'bounds_right' (int): Inclusive right index.
-        - 'thres' (float): Threshold for M1-M3 and denominator for P.
+    bounds_l : int
+        Inclusive left index
+    bounds_r : int
+        Inclusive right index
+    thres : float
+        Threshold for M1-M3 and denominator for P
     vel : array_like, shape (N,)
         Velocity array aligned with spectrum.
     spectrum : array_like, shape (N,)
@@ -998,13 +999,14 @@ def add_moments(tree, vel, a, inputvars, meta):
         Dictionary of nodes. Each node must contain at least:
         - 'bounds_left' (int), 'bounds_right' (int): Inclusive indices into `vel`/spectra.
         - 'thres' (float): Threshold used by `moments`.
-    vel : array_like, shape (N,)
+    vel : array_like, shape (nfft,)
         1D velocity array aligned with all spectra in `variables`.
-
-    !!!! TODO part is outdated
-    variables : Mapping[str, array_like]
-        Mapping from variable name (e.g., 'Z', 'Zcx', 'LDR') to a 1D spectrum array
-        aligned with `vel`.
+    a : array_like, shape (nfft, no_vars)
+        ...
+    inputvars : list, shape (no_vars)
+        String names of input vars, matching the meta keys
+    meta : Mapping
+        Definition of what Moments should be calculated for which variable
     
     Returns
     -------
@@ -1056,35 +1058,6 @@ def tree_to_ds(tree, max_n_nodes=15):
     return ds
 
 
-def tree_to_numpy(tree, max_n_nodes=15):
-    """ """
-    
-    # TODO separate out float and int
-
-    variable_names = ['bounds_left', 'bounds_right', 'parent_id', 'thres']
-
-    output = np.zeros((len(variable_names), max_n_nodes))
-    indices = np.array(list(tree.keys()))
-    indices = indices[indices < max_n_nodes]
-    #print(indices)
-    for i, var in enumerate(variable_names):
-        if len(indices) > 0:
-            output[i,indices] =  [tree[j][var] for j in indices]
-
-    # BUG cannot estimate the number of moments for an 
-    # empty tree, thus the size of the array cannot be estimated
-    moment_names = [f"{pref}_{e}" for pref, m in tree[0]['moments'].items() for e in m]
-    output_moments = np.zeros((len(moment_names), max_n_nodes))
-    for i, var in enumerate(moment_names):
-        if len(indices) > 0:
-            pref, e = var.split('_')
-            output_moments[i,indices] =  [tree[j]['moments'][pref][e] for j in indices]
-
-    return (output, np.array(variable_names))
-    return (np.concatenate((output, output_moments)),
-            np.array(variable_names + moment_names))
-
-
 def tree_to_numpy_dtypeobject(tree):
     """Convert a tree to a np array of dtype object for use with xarrays apply_ufunc.
 
@@ -1105,7 +1078,23 @@ def tree_to_numpy_dtypeobject(tree):
 
 def tree_to_numpy_predefined_size(
     tree, moment_names, max_n_nodes=15):
-    """ """
+    """Convert a tree to a fixed-size NumPy array to be used by the apply_ufunc.
+
+    Parameters
+    ----------
+    tree : dict
+        Tree mapping node indices to dictionaries with bounds, threshold,
+        parent, and moment values.
+    moment_names : list of str
+        Names of the moment variables to include.
+    max_n_nodes : int, default=15
+        Maximum number of nodes to retain in the output.
+
+    Returns
+    -------
+    tuple of (numpy.ndarray, numpy.ndarray)
+        The node-value array and the corresponding variable names.
+    """
 
     # unpack tree from array
     # only needed for the numpy of dtype dict version
@@ -1114,14 +1103,14 @@ def tree_to_numpy_predefined_size(
     # TODO separate out float and int
     variable_names = ['bounds_left', 'bounds_right', 'parent_id', 'thres']
 
-    output = np.zeros((len(variable_names), max_n_nodes))
+    output = np.full((len(variable_names), max_n_nodes), -999.)
     indices = np.array(list(tree.keys()))
     indices = indices[indices < max_n_nodes]
     for i, var in enumerate(variable_names):
         if len(indices) > 0:
             output[i,indices] =  [tree[j][var] for j in indices]
 
-    output_moments = np.zeros((len(moment_names), max_n_nodes))
+    output_moments = np.full((len(moment_names), max_n_nodes), -999.)
     for i, var in enumerate(moment_names):
         if len(indices) > 0:
             pref, e = var.split('_')
