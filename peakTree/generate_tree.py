@@ -986,7 +986,7 @@ def moments(bounds_l, bounds_r, thres, vel, spectrum, moms=['M0', 'M1', 'M2', 'M
 
 
 
-def add_moments(tree, vel, a, inputvars, meta):
+def add_moments(tree, vel, a, inputvarnames, meta):
     """Compute spectral moments for multiple variables at each node and attach results to a copied tree.
 
     For each node in `tree`, computes moments over the node's bounded window for every
@@ -1001,10 +1001,10 @@ def add_moments(tree, vel, a, inputvars, meta):
         - 'thres' (float): Threshold used by `moments`.
     vel : array_like, shape (nfft,)
         1D velocity array aligned with all spectra in `variables`.
-    a : array_like, shape (nfft, no_vars)
+    a : array_like, shape (no_vars, nfft)
         ...
-    inputvars : list, shape (no_vars)
-        String names of input vars, matching the meta keys
+    inputvarnames : list, shape (no_vars)
+        Name of first dimensions of array a (meta keys are referring to that name).
     meta : Mapping
         Definition of what Moments should be calculated for which variable
     
@@ -1025,7 +1025,7 @@ def add_moments(tree, vel, a, inputvars, meta):
     for i, node in tree.items():
         tree_result[i]['moments'] = {}
         for k, var in meta.items():
-            j_in_array = np.argwhere(inputvars == k)[0][0]
+            j_in_array = np.argwhere(inputvarnames == k)[0][0]
             #print(k, var, j_in_array, a.shape)
             tree_result[i]['moments'][k] = moments(
                 node['bounds_left'],
@@ -1123,9 +1123,9 @@ def tree_to_numpy_predefined_size(
 
 
 def ufunc_wrapper(
-        vel, a, mask, 
+        vel, inputvarnames, a, mask, 
         vel_step=None, params=None, var_peak=None, 
-        inputvars=[], meta=None
+        meta=None
     ):
     """ 
     
@@ -1139,12 +1139,12 @@ def ufunc_wrapper(
     #print(inputvars, ' array shape', a.shape)
 
     tree = spectrum_to_tree(
-        vel_step, a[np.argwhere(inputvars == var_peak)[0][0],:], 
+        vel_step, a[np.argwhere(inputvarnames == var_peak)[0][0],:], 
         mask, params
     )
 
     tree = add_moments(
-        tree, vel, a, inputvars, meta
+        tree, vel, a, inputvarnames, meta
     )
     #print(tree)
 

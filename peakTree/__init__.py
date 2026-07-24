@@ -244,16 +244,16 @@ def ds_to_tree(ds_input, params, meta):
 
     ds1, ds2 = xr.apply_ufunc(
         generate_tree.ufunc_wrapper,
-        ds_input.doppler,
+        ds_input_array.doppler,
+        ds_input_array.inputvar,
         ds_input_array,
         ds_input['noise_mask'],
         kwargs={
             'vel_step':vel_step, 
             'params': params,
             'var_peak': 'Z',
-            'inputvars': ds_input_array.coords["inputvar"].values,
             'meta': meta },
-        input_core_dims=[['doppler'], ['inputvar', 'doppler'], ['doppler']],
+        input_core_dims=[['doppler'], ['inputvar'], ['inputvar', 'doppler'], ['doppler']],
         output_core_dims=[['var', 'node'], ['var']],
         vectorize=True
     )
