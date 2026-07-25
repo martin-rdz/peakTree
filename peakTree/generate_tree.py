@@ -261,7 +261,7 @@ def coords_to_id(traversed):
         k = full_tree_id(node['coords'])
         traversed_id[k] = node
         parent = [k for k, val in traversed_id.items() if val['coords'] == node['coords'][:-1]]
-        traversed_id[k]['parent_id'] = parent[0] if len(parent) == 1 else -1
+        traversed_id[k]['id_parent'] = parent[0] if len(parent) == 1 else -1
     # level_no = 0
     # while True:
     #     current_level =list(filter(lambda d: len(d['coords']) == level_no+1, traversed))
@@ -1048,7 +1048,7 @@ def tree_to_ds(tree, max_n_nodes=15):
     ds['bounds_left'] = ('nodes', [n['bounds_left'] for n in tree.values()])
     ds['bounds_right'] = ('nodes', [n['bounds_right'] for n in tree.values()])
     ds['thres'] = ('nodes', [n['thres'] for n in tree.values()])
-    ds['parent_id'] = ('nodes', [n['parent_id'] for n in tree.values()])
+    ds['id_parent'] = ('nodes', [n['id_parent'] for n in tree.values()])
 
     for k, var in tree[0]['moments'].items():
         for m in var:
@@ -1100,8 +1100,7 @@ def tree_to_numpy_predefined_size(
     # only needed for the numpy of dtype dict version
     #tree = tree[0]
     
-    # TODO separate out float and int
-    variable_names = ['bounds_left', 'bounds_right', 'parent_id', 'thres']
+    variable_names = ['bounds_left', 'bounds_right', 'id_parent', 'thres']
 
     output = np.full((len(variable_names), max_n_nodes), -999.)
     indices = np.array(list(tree.keys()))

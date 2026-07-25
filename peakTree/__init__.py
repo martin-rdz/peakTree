@@ -261,6 +261,21 @@ def ds_to_tree(ds_input, params, meta):
     ds1.coords['var'] = ds2.isel(range=0, time=0).values
     ds_rect = ds1.to_dataset(dim='var')
     ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node')
+
+    for v in ['bounds_left', 'bounds_right', 'id_parent']:
+        ds_rect[v] = ds_rect[v].astype('int32')
+    node_ids = ds_rect.coords['node'].values
+    ds_rect['id_child_left'] = ('node', 2*node_ids + 1)
+    ds_rect['id_child_right'] = ('node', 2*node_ids + 2)
+    ds_rect['has_children'] = xr.apply_ufunc(
+        h.has_children,
+        ds_rect.id_parent,
+        input_core_dims=[['node']],
+        output_core_dims=[['node']],
+        vectorize=True
+    )
+    ds_rect['is_leaf'] = xr.where(
+        (ds_rect.id_parent != -999) & ~ds_rect.has_children, True, False)
     return ds_rect
 
 
