@@ -30,6 +30,7 @@ dependencies = [
   "loess",
   "toml",
   "rpgpy",
+  "cmcrameri",
 ]
 
 readme = "README.md"

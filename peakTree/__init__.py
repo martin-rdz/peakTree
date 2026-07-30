@@ -219,25 +219,83 @@ def _roll_velocity(vel, vel_step, roll_vel, list_of_vars):
 
 import xarray as xr    
 
-def ds_to_tree(ds_input, params, meta):
-    """ 
+
+def load_znc(filename):
+    """load the Metek MIRA znc spectra and 
+    """
+
+
+    ds = xr.open_dataset(filename)
+    ds['time'] = (ds['time']*1e6 + ds['microsec']).astype('datetime64[us]')
+
+    Z = ds['SPCco'] / ds['npw1'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCo']
+    Z.attrs['long_name'] = 'Spectral reflectivity'
     
-    meta={
-        'Z': ['M0', 'M1', 'M2', 'M3', 'P'],
-        'Zcx': ['M0', 'P'],
-        }
+    nfft = ds['doppler'].values.shape[0]
+    noise = ds['HSDco'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 / nfft 
+    
+    Zcx = ds['SPCcx'] / ds['npw2'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCx']
+    
+    no_roll = int(ds['doppler'].shape[0]/2)
+    print('no_roll', no_roll)
+    Z = Z.roll(doppler=no_roll, roll_coords=True).isel(doppler=slice(None, None, -1))
+    Zcx = Zcx.roll(doppler=no_roll, roll_coords=True).isel(doppler=slice(None, None, -1))
+    Z['doppler'] = Z['doppler']*-1
+    Zcx['doppler'] = Zcx['doppler']*-1
+    
     ds_input = xr.Dataset(
         data_vars={
             "Z": Z,
             "Zcx": Zcx,
-            "noise_mask": Z < noise*1.3
+            "noise": noise,
         }
     )
-    params = {'width_thres': 0.1, 'prom_thres': 1}
 
-    
+    return ds_input
+
+
+
+def ds_to_tree(ds_input, params, meta):
+    """Convert an xarray dataset of spectra into a peakTree dataset.
+
+    Parameters
+    ----------
+    ds_input : xarray.Dataset
+        Input dataset containing one or more variables along the ``inputvar``
+        and ``doppler`` dimensions, plus a boolean ``noise_mask``.
+    params : dict
+        Parameters passed to the tree-building routine, such as width and
+        prominence thresholds.
+    meta : dict
+        Mapping from variable names to the moment names used when computing
+        moments.
+
+    Returns
+    -------
+    xarray.Dataset
+        Rectangularized tree dataset with node-wise bounds, parent/child
+        relationships, and moment variables.
+
+    Examples
+    --------
+    >>> meta = {
+    ...     'Z': ['M0', 'M1', 'M2', 'M3', 'P'],
+    ...     'Zcx': ['M0', 'P'],
+    ... }
+    >>> ds_input = xr.Dataset(
+    ...     data_vars={
+    ...         "Z": Z,
+    ...         "Zcx": Zcx,
+    ...         "noise_mask": Z < noise * 1.3,
+    ...     }
+    ... )
+    >>> params = {'width_thres': 0.1, 'prom_thres': 1}
+    ...
+    >>> ds_rect = peakTree.ds_to_tree(
+    ...     ds_input, params, meta)
+
+
     """
-
 
     ds_input_array = ds_input.to_array(dim="inputvar")
     vel_step = (ds_input['doppler'][1] - ds_input['doppler'][0]).values

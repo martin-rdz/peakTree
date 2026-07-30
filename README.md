@@ -97,9 +97,47 @@ tree = peakTree.generate_tree.add_moments(
 >>> ...
 ```
 
+In preparation of processing larger chunks of data, these functions are combined into a wrapper, which returns an array instead of the pure python dictionary tree
+
+```python
+peakTree.generate_tree.ufunc_wrapper(
+    ds_example['doppler'].values,
+    ds_example_array.coords["inputvar"].values,
+    ds_example_array.values,
+    (ds_example['Z'] < ds_example['noise']*1.3).values,
+    var_peak='Z',
+    vel_step=vel_step,
+    params={'width_thres': 0.1, 'prom_thres': 1},
+    meta={
+        'Z': ['M0', 'M1', 'M2', 'M3', 'P'],
+        'Zcx': ['M0', 'P'],
+        }
+)
+```
+
+
 ### Processing larger datasets
 
-```
+A convenience function exists to process large datasets:
+```python
+ds_input['noise_mask'] = ds_input['Z'] < ds_input['noise']*1.3
+ds_input = ds_input.drop_vars('noise')
+
+meta={
+    'Z': ['M0', 'M1', 'M2', 'M3', 'P'],
+    'Zcx': ['M0', 'P'],
+    }
+
+ds_rect = peakTree.ds_to_tree(
+    ds_input,
+    {'width_thres': 0.1, 'prom_thres': 1},
+    meta
+)
+
+dt = ds_rect.time.values[0].astype('datetime64[us]').astype('O')
+ds_rect.to_netcdf(
+    path=f'{dt:%Y%m%d_%H%M}_mira_peakTree.nc4'
+)
 ```
 
 

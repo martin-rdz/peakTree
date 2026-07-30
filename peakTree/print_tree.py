@@ -13,6 +13,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import helpers as h
 
+import xarray as xr
+import cmcrameri.cm as cmc
+
 import json
 
 
@@ -273,3 +276,102 @@ def d3_format(travtree):
         
         
 
+def plot_no_nodes(ds):
+    """plot the no_nodes from the rectangularized dataset"""
+    
+    ds_filled = ds.where(ds != -999, np.nan)
+
+    cat_cmap = matplotlib.colors.ListedColormap(
+        ["#ffffff", "#cccccc", "#cc6677", "#88ccee", "#eecc66", "#332288"], 'pTcat') 
+    cat_cmap.set_over("#000000")
+    # even number of nodes is not possible in binary tree
+    # thus these values can be omitted
+    labels = {0: '0', 1: "1", 2: "3", 3: "5", 4: "7", 5: "9"}
+    no_nodes_plot = np.ceil(ds_filled['no_nodes']/2.)
+    
+    fig, ax = plt.subplots(figsize=(10,4))
+    
+    pcmesh = ax.pcolormesh(
+        ds_filled['no_nodes']['time'], ds_filled['no_nodes']['range'], no_nodes_plot.T,
+        shading = 'nearest',
+        cmap=cat_cmap,
+        vmin=-0.5, vmax=5.5,
+    )
+    
+    ax.set_ylabel('Range [m]')
+    ax.set_xlabel('Time')
+    #ax.xaxis.set_major_locator(matplotlib.dates.MinuteLocator(interval=10))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
+    cbar = fig.colorbar(pcmesh, ticks=list(labels.keys()), label='no_nodes')
+    cbar.ax.set_yticklabels(labels.values())
+
+    return fig, ax
+
+
+def plot_moments(
+    ds, no_nodes_to_plot=3, 
+    Z_M0_lims = [-40, 20], Z_M1_lims=[-4,4],
+    mask_not_leaf=False, mark_has_children=False):
+    """plot the moments from the rectangularized dataset"""
+
+    ds_filled = ds.where(ds != -999, np.nan)
+
+    if mask_not_leaf:
+        ds_filled['Z_M0'] = xr.where(ds_filled['is_leaf'], ds_filled['Z_M0'], np.nan)
+        ds_filled['Z_M1'] = xr.where(ds_filled['is_leaf'], ds_filled['Z_M1'], np.nan)
+        
+
+    fig, ax = plt.subplots(
+        no_nodes_to_plot,2, figsize=(15,5*(no_nodes_to_plot-1)),
+        sharex=True, sharey=True)
+
+    for i in range(0,no_nodes_to_plot):
+        #is_leaf = ds_filled['is_leaf'].isel(node=i).astype(bool) & ~np.isnan(ds_filled['id_parent'].isel(node=i))
+        has_children = ds_filled['has_children'].isel(node=i)
+
+        pcmesh = ax[i,0].pcolormesh(
+            ds_filled['time'], ds_filled['range'], 10*np.log10(ds_filled['Z_M0'].isel(node=i)).T,
+            shading = 'nearest',
+            vmin=Z_M0_lims[0], vmax=Z_M0_lims[1],
+            cmap=cmc.roma_r
+        )
+        if mark_has_children:
+            cf = ax[i,0].contourf(
+                ds_filled['time'], ds_filled['range'], has_children.T, 
+                shading='nearest', hatches=['..'], levels=[0.5, 1], colors='none')
+            cf.set_edgecolor('lightgrey')
+            cf.set_linewidth(0)
+        ax[i,0].set_ylabel('Range [m]')
+        ax[i,0].xaxis.set_major_locator(matplotlib.dates.MinuteLocator(interval=2))
+        ax[i,0].xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
+        ax[i,0].xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        ax[i,0].yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        ax[i,0].text(0.01,0.94, f"node {i}", transform=ax[i,0].transAxes, fontweight='semibold', fontsize=14)
+        fig.colorbar(pcmesh, label=f'Reflectivity node {i}', pad=0.01)
+
+        pcmesh = ax[i,1].pcolormesh(
+            ds_filled['time'], ds_filled['range'], ds_filled['Z_M1'].isel(node=i).T,
+            shading = 'nearest',
+            vmin=Z_M1_lims[0], vmax=Z_M1_lims[1],
+            cmap=cmc.vik
+        )
+        if mark_has_children:
+            cf = ax[i,1].contourf(
+                ds_filled['time'], ds_filled['range'], has_children.T, 
+                shading='nearest', hatches=['..'], levels=[0.5, 1], colors='none')
+            cf.set_edgecolor('lightgrey')
+            cf.set_linewidth(0)
+        ax[i,1].xaxis.set_major_locator(matplotlib.dates.MinuteLocator(interval=2))
+        ax[i,1].xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        ax[i,1].yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        ax[i,1].xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%H:%M'))
+        ax[i,1].tick_params(axis='y', labelleft=False)
+        ax[i,1].text(0.01,0.94, f"node {i}", transform=ax[i,1].transAxes, fontweight='semibold', fontsize=14)
+        fig.colorbar(pcmesh, label=f'Vertical velocity node {i}', pad=0.01)
+
+    ax[-1,0].set_xlabel('Time UTC')
+    ax[-1,1].set_xlabel('Time UTC')
+
+    fig.tight_layout()
+
+    return fig, ax
