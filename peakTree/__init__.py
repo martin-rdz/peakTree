@@ -218,6 +218,83 @@ def _roll_velocity(vel, vel_step, roll_vel, list_of_vars):
     return velocity, out_vars
 
 import xarray as xr    
+from rpgpy import read_rpg
+
+def load_rpgbinary(filename):
+    """
+
+    """
+
+    header, data = read_rpg(filename)
+    offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
+    ts = offset + data['Time'] + data['MSec']*1e-3
+    
+    # inheriting the time probably does not make sense if we want to do individual resampling
+    datatree = xr.DataTree(name='root')
+    
+    rg = header['RAlts']
+    chirp_start_indices = header['RngOffs']
+    no_chirps = chirp_start_indices.shape[0]
+    #print(f'chirp_start_indices {chirp_start_indices}')
+    bins_per_chirp = np.diff(np.hstack((chirp_start_indices, rg.shape[0])))
+    #print(f'range bins per chirp {bins_per_chirp} {bins_per_chirp.shape}')
+    specN = header['SpecN']
+    #print('SpecN', specN)
+    
+    velocity_vector = header['velocity_vectors']
+    
+    rg_chirp_map = np.repeat(np.arange(no_chirps), bins_per_chirp)
+
+    for sel_chirp in range(no_chirps):
+
+        specN_half = int(specN[sel_chirp]/2)
+        spec_midpoint = int(data['TotSpec'].shape[2]/2)
+
+        specslice = slice(spec_midpoint-specN_half, spec_midpoint+specN_half)
+        print('specslice', specslice)
+        # ignore the scaling for now
+        spec_tot = data['TotSpec'][:,rg_chirp_map == sel_chirp, specslice]
+        spec_h = data['HSpec'][:,rg_chirp_map == sel_chirp, specslice]
+        spec_cov_re = data['ReVHSpec'][:,rg_chirp_map == sel_chirp, specslice]
+        spec_cov_im = data['ImVHSpec'][:,rg_chirp_map == sel_chirp, specslice]
+        spec_v = 4 * spec_tot - spec_h - 2 * spec_cov_re
+        # adding the noise omitted here
+        noise_v = data['TotNoisePow'][:,rg_chirp_map == sel_chirp]/specN[sel_chirp]
+        noise_h = data['HNoisePow'][:,rg_chirp_map == sel_chirp]/specN[sel_chirp]
+
+        spec_h += noise_h[...,np.newaxis]
+        spec_v += noise_v[...,np.newaxis]
+        noise_combined = (noise_v + noise_h) / 2
+
+        # quality filters suggested by Alexander
+        mask = (spec_tot < 1.1e-10) | (spec_h < 1.1e-10)
+
+        rhv = np.sqrt(spec_cov_re**2 + spec_cov_im**2) / np.sqrt(spec_v * spec_h)
+
+        Z = (spec_v + spec_h)*(1+rhv) / 2 - noise_combined[...,np.newaxis]
+        Zcx = (spec_v + spec_h)*(1-rhv) / 2 - noise_combined[...,np.newaxis]
+        print(Z.shape)
+
+        Z[np.isnan(Z)] = 0
+        Z[mask] = 0
+        Zcx[np.isnan(Zcx)] = 0
+
+        ds = xr.Dataset(
+            data_vars = dict(
+                Z=(('time', 'range', 'doppler'), Z),
+                Zcx=(('time', 'range', 'doppler'), Zcx),
+                noise_combined=(('time', 'range'), noise_combined),
+                ),
+            coords=dict(
+                time=('time', ts.astype('datetime64[s]')),
+                range=('range', rg[rg_chirp_map == sel_chirp]),
+                doppler=('doppler', velocity_vector[sel_chirp,specslice]),
+                ),
+            #attrs=dict(),
+        )
+        datatree[f"chirp{sel_chirp+1}"] = xr.DataTree(ds)
+
+    return datatree
 
 
 def load_znc(filename):
@@ -275,6 +352,11 @@ def ds_to_tree(ds_input, params, meta):
     xarray.Dataset
         Rectangularized tree dataset with node-wise bounds, parent/child
         relationships, and moment variables.
+
+    Notes
+    -----
+    The implementation applies :func:`generate_tree.ufunc_wrapper` to each
+    spectrum in the input dataset via :func:`xarray.apply_ufunc`.
 
     Examples
     --------
@@ -335,6 +417,52 @@ def ds_to_tree(ds_input, params, meta):
     ds_rect['is_leaf'] = xr.where(
         (ds_rect.id_parent != -999) & ~ds_rect.has_children, True, False)
     return ds_rect
+
+    
+    
+def store_to_netcdf(
+        ds, savepath, short_location='', system_name='',
+        contact='', institution=''):
+    """enrich the xr.Dataset with some metadata and store to netcdf
+    
+    try to mimic the information als present in the original output files
+
+    
+    .. TODO::
+        The original version stores the velocity arrays, but that information is hard to map 
+        (especially when chrips are present). Maybe its better to store the velocity for each node directly.
+
+    .. TODO::
+        location, inputinfo, location, commit and branch are missing
+
+    .. TODO::
+        cloudnet hours and true unix timestamps might also be needed
+        
+        
+    .. TODO::
+        Think of optimizing variable sorting
+    
+    """
+
+    begin_dt = ds.time.values[0].astype('datetime64[us]').astype('O')
+
+    
+    ds.attrs['description'] = 'peakTree processing'
+    ds.attrs['software_version'] = __version__
+    ds.attrs['day'] = str(begin_dt.day)
+    ds.attrs['month'] = str(begin_dt.month)
+    ds.attrs['year'] = str(begin_dt.year)
+    ds.attrs['contact'] = contact
+    ds.attrs['institution'] = institution
+    ds.attrs['creation_time'] = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+    
+    savefile=Path(savepath) / f'{begin_dt:%Y%m%d_%H%M}_{short_location}_{system_name}_peakTree.nc4'
+    ds.to_netcdf(
+        path=savefile
+    )
+    print('saved to ', savefile)
+    
 
 
 class peakTreeBuffer():
