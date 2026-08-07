@@ -15,6 +15,8 @@ from . import helpers as h
 from . import generate_tree
 import toml
 
+from typing import Union
+
 import xarray as xr    
 from rpgpy import read_rpg
 
@@ -217,7 +219,7 @@ def load_rpgbinary(filename):
             data_vars = dict(
                 Z=(('time', 'range', 'doppler'), Z),
                 Zcx=(('time', 'range', 'doppler'), Zcx),
-                noise_combined=(('time', 'range'), noise_combined),
+                noise=(('time', 'range'), noise_combined),
                 ),
             coords=dict(
                 time=('time', ts.astype('datetime64[s]')),
@@ -265,8 +267,69 @@ def load_znc(filename):
     return ds_input
 
 
+def check_and_nest_parameters(keys, d):
+    """Check and nest parameters based on provided keys.
 
-def ds_to_tree(ds_input, params, meta):
+    Parameters
+    ----------
+    keys : set
+        Expected parameter keys.
+    d : dict
+        Dictionary containing parameters.
+
+    Returns
+    -------
+    dict
+        Dictionary with parameters nested according to keys.
+
+    Raises
+    ------
+    ValueError
+        If tree_params does not contain sufficient keys.
+    """
+
+    if set(keys) == set(d.keys()):
+        # names of datatree nodes are in tree_params
+        print('all keys there, nothing to do', list(keys))
+        return d
+    elif set(d.keys()).issubset(set(keys)):
+        raise ValueError('tree_params not sufficient keys')
+    else:
+        return {k: d for k in keys}
+
+
+def to_tree(data: Union[xr.Dataset, xr.DataTree], params: dict, meta: dict):
+    """ 
+    
+    Notes
+    -----
+    
+    `xr.map_over_datasets` does not allow for per node function parameters
+    
+    
+    """
+    
+    if isinstance(data, xr.core.dataset.Dataset):
+        return ds_to_tree(data, params, meta)
+
+    # just for now, might remove later
+    assert isinstance(data, xr.core.datatree.DataTree)
+
+    params = check_and_nest_parameters(data.keys(), params)
+    meta = check_and_nest_parameters(data.keys(), meta)
+    
+    d = {}
+    for path, node in data.subtree_with_keys:
+        if not node.has_data:
+            continue
+        print(path, node)
+        d[path] = ds_to_tree(node.dataset, params[path], meta[path])
+
+    return xr.DataTree.from_dict(d)
+
+
+
+def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
     """Convert an xarray dataset of spectra into a peakTree dataset.
 
     Parameters
@@ -375,6 +438,10 @@ def store_to_netcdf(
         
     .. TODO::
         Think of optimizing variable sorting
+
+    .. TODO::
+        not working for datatrees yet becasue of the time, but for rpg stacking might be an option
+        also datatree.to_netcdf is incomptaible with path=
     
     """
 
