@@ -5,7 +5,7 @@
 Software for converting multi-peaked (cloud) radar Doppler spectra into a binary tree structure.
 
 > [!IMPORTANT]
-> At the moment a refactoring is ongoing, aiming for a more flexible structure and utilizing xarray for generic data handling.
+> At the moment a refactoring is ongoing, aiming for a more flexible structure and utilizing xarray for generic data handling. The original version is still available [peakTree_legacy](https://github.com/martin-rdz/peakTree_legacy)
 
 Technical documentation is available at [peakTree-doc](https://martin-rdz.github.io/peakTree-doc/)
 
