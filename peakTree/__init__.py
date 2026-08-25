@@ -133,32 +133,28 @@ def get_averaging_boundaries(array, slice_length, zero_index=0):
 
     return zero_index + is_left, zero_index + is_right
 
+    
+def roll_velocity_dataset(ds, config):
+    """roll the spectra, i.e., glue the rightmost x m/s to the left
+    
+    """
+    
+    vel_step = (ds.doppler[1] - ds.doppler[0]).values
+    bin_roll_velocity = (config['roll_velocity']/vel_step).astype(int)
+    print(bin_roll_velocity, bin_roll_velocity*vel_step)
 
-def _roll_velocity(vel, vel_step, roll_vel, list_of_vars):
-    """roll the spectrum, i.e., glue the rightmost x m/s to the left """
-    #print('bin_roll_velocity ', roll_vel/vel_step)
-    bin_roll_velocity = (roll_vel/vel_step).astype(int)
-    velocity = np.concatenate((
-        np.linspace(vel[0] - bin_roll_velocity * vel_step, 
-                    vel[0] - vel_step, 
-                    num=bin_roll_velocity), 
-                    vel[:-bin_roll_velocity]))
+    ds_rolled = ds.roll(doppler=bin_roll_velocity)
+    ds_rolled.coords['doppler'] = ds.coords['doppler'] - bin_roll_velocity*vel_step
 
-    out_vars = []
-    for var in list_of_vars:
-        out_vars.append(
-            np.concatenate((var[-bin_roll_velocity:], 
-                            var[:-bin_roll_velocity]))
-        )
-    #specZ = np.concatenate((specZ[-bin_roll_velocity:], 
-    #                        specZ[:-bin_roll_velocity]))
-    #also specLDR, specZcx, specZ_mask, specZcx_mask, specLDR_mask
-    return velocity, out_vars
+    return ds_rolled
+    
 
 
 def load_rpgbinary(filename):
-    """
-
+    """load the rpg LV0 files into a xr.datatree structure
+    
+    .. TODO::
+        maybe track the chirp boundaries also in output file
     """
 
     header, data = read_rpg(filename)
@@ -234,7 +230,9 @@ def load_rpgbinary(filename):
 
 
 def load_znc(filename):
-    """load the Metek MIRA znc spectra and 
+    """load the Metek MIRA znc spectra into a xr.Dataset
+    
+     
     """
 
 
@@ -297,6 +295,34 @@ def check_and_nest_parameters(keys, d):
     else:
         return {k: d for k in keys}
 
+        
+def map_over_dataset_nested_args(datatree, func, *args):
+    """custom version of xr.map_over_datasets, which allows for nested args,configs
+
+        
+
+    
+    .. code:: python
+    
+        args = ({'resample_time': '6s'},)
+        # is expanded to 
+        [{'chirp1': {'resample_time': '6s'}, 'chirp2': {'resample_time': '6s'}, 'chirp3': {'resample_time': '6s'}}]
+    
+    """
+
+    print('args ', args)
+    args = [check_and_nest_parameters(datatree.keys(), a) for a in args]
+    print('nested args ', args)
+
+    d = {}
+    for path, node in datatree.subtree_with_keys:
+        if not node.has_data:
+            continue
+        #print(path, node)
+        d[path] = func(node.dataset, *[e[path] for e in args])
+
+    return xr.DataTree.from_dict(d)
+
 
 def to_tree(data: Union[xr.Dataset, xr.DataTree], params: dict, meta: dict):
     """ 
@@ -315,17 +341,10 @@ def to_tree(data: Union[xr.Dataset, xr.DataTree], params: dict, meta: dict):
     # just for now, might remove later
     assert isinstance(data, xr.core.datatree.DataTree)
 
-    params = check_and_nest_parameters(data.keys(), params)
-    meta = check_and_nest_parameters(data.keys(), meta)
-    
-    d = {}
-    for path, node in data.subtree_with_keys:
-        if not node.has_data:
-            continue
-        print(path, node)
-        d[path] = ds_to_tree(node.dataset, params[path], meta[path])
+    #params = check_and_nest_parameters(data.keys(), params)
+    #meta = check_and_nest_parameters(data.keys(), meta)
 
-    return xr.DataTree.from_dict(d)
+    return map_over_dataset_nested_args(data, ds_to_tree, params, meta)
 
 
 
@@ -427,7 +446,7 @@ def store_to_netcdf(
     
     .. TODO::
         The original version stores the velocity arrays, but that information is hard to map 
-        (especially when chrips are present). Maybe its better to store the velocity for each node directly.
+        (especially when chirps are present). Maybe its better to store the velocity for each node directly.
 
     .. TODO::
         location, inputinfo, location, commit and branch are missing
@@ -440,8 +459,8 @@ def store_to_netcdf(
         Think of optimizing variable sorting
 
     .. TODO::
-        not working for datatrees yet becasue of the time, but for rpg stacking might be an option
-        also datatree.to_netcdf is incomptaible with path=
+        not working for datatrees yet because of the time, but for rpg stacking might be an option
+        also datatree.to_netcdf is incompatible with path=
     
     """
 
