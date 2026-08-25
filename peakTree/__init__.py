@@ -36,44 +36,6 @@ log = logging.getLogger(__name__)
 
 from ._meta import __version__, __author__
 
-#@profile
-def check_part_not_reproduced(tree, spectrum):
-    """check how good the moments in the tree (only leave nodes)
-    represent the original spectrum (i.e. if there are non-Gaussian peaks)
-    
-    Args:
-        tree: a tree in the traversed (dict) format
-        spectrum: and the corresponding spectrum
-
-    Returns:
-        number of bins, where the reprocduced spectrum differs by more than 7dB
-    """
-    parents = [n.get('parent_id', -1) for n in tree.values()]
-    leave_ids = list(set(tree.keys()) - set(parents))
-    spec_from_mom = np.zeros(spectrum['specZ'].shape)
-    vel, vel_mask = h.masked_to_plain(spectrum['vel'])
-    if 'vel_step' not in spectrum:
-        delta_v = vel[~vel_mask][2] - vel[~vel_mask][1]
-    else:
-        delta_v = spectrum['vel_step']
-    
-    for i in leave_ids:
-        if tree[i]['width'] < 0.001:
-            tree[i]['width'] = 0.0001
-        S = tree[i]['z'] * delta_v
-        # calculate Gaussian only in a small range
-        ivmean = np.searchsorted(spectrum['vel'], tree[i]['v'])
-        step = int(7*tree[i]['width']/delta_v)
-        ista, iend = ivmean - step, ivmean + step
-        spec_from_mom[ista:iend] += S * h.gauss_func(spectrum['vel'][ista:iend], tree[i]['v'], tree[i]['width'])
-        
-    spec_from_mom[spec_from_mom < spectrum['noise_thres']] = spectrum['noise_thres']
-    difference = spectrum['specZ']/spec_from_mom
-   
-    return np.count_nonzero(np.abs(difference[~spectrum['specZ_mask']]) > h.z2lin(7))*delta_v
-
-
-
 def get_git_hash():
     """
     Returns:
@@ -88,50 +50,6 @@ def get_git_hash():
         log.warning(commit)
     return commit.rstrip(), branch.rstrip()
 
-
-
-def get_time_grid(timestamps, ts_range, time_interval, filter_empty=True):
-    """get the mapping from timestamp indices to gridded times
-    eg for use in interpolation routines
-
-    https://gist.github.com/martin-rdz/b7c3b9f06bb41aeb6b2fb6c888275e26
-    
-    Args:
-        timestamps: list of timestamps
-        ts_range: range fo the gridded timestamps
-        time_interval: interval of the gridded timestamps
-        filter_empty (bool, optional): include the bins that are empty
-    Returns:
-        list of (timestamp_begin, timestamp_end, grid_mid, index_begin, index_end, no_indices)
-    """
-    print('get_time_grid ', ts_range[0], ts_range[1])
-    grid = np.arange(ts_range[0], ts_range[1]+1, time_interval)
-    grid_mid = grid[:-1] + np.diff(grid)/2
-
-    corresponding_grid = np.digitize(timestamps, grid)-1
-    bincount = np.bincount(corresponding_grid)
-    end_index = np.cumsum(bincount)
-    begin_index = end_index - bincount
-    
-    out = zip(grid[:-1], grid[1:], grid_mid, begin_index, end_index, bincount)
-    if filter_empty:
-        out = filter(lambda x: x[5] !=0, out)
-    out = list(out)
-    return [np.array(list(map(lambda e: e[i], out))) for i in range(6)]
-
-
-def get_averaging_boundaries(array, slice_length, zero_index=0):
-    """get the left and right indices each element in an array
-    for a given averaging slice_length
-    """
-
-    is_left = np.digitize(array-slice_length/2., array)
-    is_right = np.digitize(array+slice_length/2., array, right=True)
-
-    #print(is_left[0], is_right[0])
-    #print(array[is_left[0]], array[0], array[is_right[0]])
-
-    return zero_index + is_left, zero_index + is_right
 
     
 def roll_velocity_dataset(ds, config):
