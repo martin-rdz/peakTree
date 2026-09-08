@@ -77,7 +77,7 @@ def load_rpgbinary(filename):
 
     header, data = read_rpg(filename)
     offset = (datetime.datetime(2001,1,1) - datetime.datetime(1970, 1, 1)).total_seconds()
-    ts = offset + data['Time'] + data['MSec']*1e-3
+    ts = offset*1e3 + data['Time']*1e3 + data['MSec']
     
     # inheriting the time probably does not make sense if we want to do individual resampling
     datatree = xr.DataTree(name='root')
@@ -125,6 +125,12 @@ def load_rpgbinary(filename):
         Zcx = (spec_v + spec_h)*(1-rhv) / 2 - noise_combined[...,np.newaxis]
         print(Z.shape)
 
+        # Comparison with the LV1 files indicates, that the reflectivity might
+        # be a factor of 2 (3dB) too high
+        Z /= 2
+        Zcx /= 2
+        noise_combined /= 2
+
         Z[np.isnan(Z)] = 0
         Z[mask] = 0
         Zcx[np.isnan(Zcx)] = 0
@@ -136,7 +142,7 @@ def load_rpgbinary(filename):
                 noise=(('time', 'range'), noise_combined),
                 ),
             coords=dict(
-                time=('time', ts.astype('datetime64[s]')),
+                time=('time', ts.astype('datetime64[ms]')),
                 range=('range', rg[rg_chirp_map == sel_chirp]),
                 doppler=('doppler', velocity_vector[sel_chirp,specslice]),
                 ),
@@ -161,7 +167,10 @@ def load_znc(filename):
     Z.attrs['long_name'] = 'Spectral reflectivity'
     
     nfft = ds['doppler'].values.shape[0]
-    noise = ds['HSDco'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 / nfft 
+    #noise = ds['HSDco'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 / nfft 
+    # https://github.com/OPTIMICe-team/tripex_pol/blob/master/cheops_tripex_pol/ghostEchoFiltering_HPC/kaLib.py 
+    noise = ds['HSDco'] / ds['npw1'] * ds['SNRCorFaCo'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 
+    noise_cx = ds['HSDcx'] / ds['npw2'] * ds['SNRCorFaCx'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 
     
     Zcx = ds['SPCcx'] / ds['npw2'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCx']
     
@@ -171,12 +180,19 @@ def load_znc(filename):
     Zcx = Zcx.roll(doppler=no_roll, roll_coords=True).isel(doppler=slice(None, None, -1))
     Z['doppler'] = Z['doppler']*-1
     Zcx['doppler'] = Zcx['doppler']*-1
+
+    Z = Z - noise
+    # equivalent to Z+noise < 0.5*noise
+    Z = xr.where(Z < 1e-8, 0, Z)
+    Zcx = Zcx - noise_cx
+    Zcx = xr.where(Zcx < 1e-8, 0, Zcx)
     
     ds_input = xr.Dataset(
         data_vars={
             "Z": Z,
             "Zcx": Zcx,
             "noise": noise,
+            "noise_cx": noise_cx,
         }
     )
 
