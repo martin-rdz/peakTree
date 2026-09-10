@@ -23,12 +23,14 @@ classifiers = [
 dependencies = [
   "numpy==2.1",
   "matplotlib",
+  "xarray",
   "netCDF4",
   "numba",
   "pandas",
   "loess",
   "toml",
   "rpgpy",
+  "cmcrameri",
 ]
 
 readme = "README.md"

@@ -79,6 +79,13 @@ def fill_with(array, mask, fill):
     return filled
 
 
+def has_children(id_parent):
+    """array of id_parent has children"""
+    all_ids = np.arange(id_parent.shape[0])
+    has_children = np.isin(all_ids, id_parent.astype(int))
+    return has_children
+
+
 def round_odd_old(f):
     return int(np.ceil(f/2.) * 2 + 1)
 
