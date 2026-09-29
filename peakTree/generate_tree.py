@@ -564,14 +564,14 @@ def tree_to_numpy_predefined_size(
     
     variable_names = ['bounds_left', 'bounds_right', 'id_parent', 'thres']
 
-    output = np.full((len(variable_names), max_n_nodes), -999.)
+    output = np.full((len(variable_names), max_n_nodes), -999.).astype(np.float32)
     indices = np.array(list(tree.keys()))
     indices = indices[indices < max_n_nodes]
     for i, var in enumerate(variable_names):
         if len(indices) > 0:
             output[i,indices] =  [tree[j][var] for j in indices]
 
-    output_moments = np.full((len(moment_names), max_n_nodes), -999.)
+    output_moments = np.full((len(moment_names), max_n_nodes), -999.).astype(np.float32)
     for i, var in enumerate(moment_names):
         if len(indices) > 0:
             pref, e = var.split('_')
