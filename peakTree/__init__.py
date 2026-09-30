@@ -9,6 +9,7 @@ import datetime
 from pathlib import Path
 import logging
 import subprocess
+import gc
 import netCDF4
 import numpy as np
 from . import helpers as h
@@ -153,15 +154,25 @@ def load_rpgbinary(filename):
     return datatree
 
 
-def load_znc(filename):
+def load_znc(filename, pre_chunk=None):
     """load the Metek MIRA znc spectra into a xr.Dataset
     
      
     """
 
 
-    ds = xr.open_dataset(filename)
+    ds = xr.open_dataset(filename, chunks={'time': 600, 'range': 496, 'doppler': -1})
+    #ds = xr.open_dataset(filename)
+    print(ds.chunks)
     ds['time'] = (ds['time']*1e6 + ds['microsec']).astype('datetime64[us]')
+    print(f"ds {ds.nbytes / 2**20:.2f} MiB")
+
+    if pre_chunk:
+        n = ds.sizes["time"]
+        i, p = pre_chunk
+        ds = ds.isel(time=slice(i * n // p, (i + 1) * n // p))
+        #print(n, i * n // p, (i + 1) * n // p)
+        #print(n, ((i+1) * n // p) - (i * n // p))
 
     Z = ds['SPCco'] / ds['npw1'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCo']
     Z.attrs['long_name'] = 'Spectral reflectivity'
@@ -181,6 +192,11 @@ def load_znc(filename):
     Z['doppler'] = Z['doppler']*-1
     Zcx['doppler'] = Zcx['doppler']*-1
 
+    print(f"ds {ds.nbytes / 2**20:.2f} MiB")
+    ds.close()
+    del ds
+    gc.collect()
+
     Z = Z - noise
     # equivalent to Z+noise < 0.5*noise
     Z = xr.where(Z < 1e-8, 0, Z)
@@ -195,6 +211,10 @@ def load_znc(filename):
             "noise_cx": noise_cx,
         }
     )
+    if pre_chunk:
+        ds_input.load()
+    #print(ds_input['time'].shape)
+    print(f"ds input {ds_input.nbytes / 2**20:.2f} MiB")
 
     return ds_input
 
@@ -281,7 +301,6 @@ def to_tree(data: Union[xr.Dataset, xr.DataTree], params: dict, meta: dict):
     return map_over_dataset_nested_args(data, ds_to_tree, params, meta)
 
 
-
 def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
     """Convert an xarray dataset of spectra into a peakTree dataset.
 
@@ -345,16 +364,16 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
             'meta': meta },
         input_core_dims=[['doppler'], ['inputvar'], ['inputvar', 'doppler'], ['doppler']],
         output_core_dims=[['var', 'node'], ['var']],
-        vectorize=True
+        vectorize=True,
     )
 
     ds1.coords['var'] = ds2.isel(range=0, time=0).values
     ds_rect = ds1.to_dataset(dim='var')
-    ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node')
+    ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node').astype('int32')
 
     for v in ['bounds_left', 'bounds_right', 'id_parent']:
         ds_rect[v] = ds_rect[v].astype('int32')
-    node_ids = ds_rect.coords['node'].values
+    node_ids = ds_rect.coords['node'].values.astype('int32')
     ds_rect['id_child_left'] = ('node', 2*node_ids + 1)
     ds_rect['id_child_right'] = ('node', 2*node_ids + 2)
     ds_rect['has_children'] = xr.apply_ufunc(
@@ -362,7 +381,7 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
         ds_rect.id_parent,
         input_core_dims=[['node']],
         output_core_dims=[['node']],
-        vectorize=True
+        vectorize=True,
     )
     ds_rect['is_leaf'] = xr.where(
         (ds_rect.id_parent != -999) & ~ds_rect.has_children, True, False)
