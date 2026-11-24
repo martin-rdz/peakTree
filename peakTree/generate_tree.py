@@ -92,6 +92,18 @@ def peak_pairs_to_call(peak_ind):
         yield from peak_pairs_to_call(right)
 
 
+def _nanargmax(a):
+    """np.nanargmax with a fast path for the usual case without NaNs
+
+    np.argmax returns the index of the first NaN if there is one, so the
+    (slower) np.nanargmax is only needed in that case.
+    """
+    i = np.argmax(a)
+    if np.isnan(a[i]):
+        return np.nanargmax(a)
+    return i
+
+
 class Node():
     """class to generate the tree
     
@@ -131,8 +143,8 @@ class Node():
             # insert here
             spec_left = self.spec[bounds_left[0]-self.bounds[0]:bounds_left[1]+1-self.bounds[0]]
             spec_right = self.spec[bounds_right[0]-self.bounds[0]:bounds_right[1]+1-self.bounds[0]]
-            prom_left = spec_left[np.nanargmax(spec_left)]/thres
-            prom_right = spec_right[np.nanargmax(spec_right)]/thres
+            prom_left = spec_left[_nanargmax(spec_left)]/thres
+            prom_right = spec_right[_nanargmax(spec_right)]/thres
 
             cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
             if all(cond_prom) or ignore_prom:
@@ -167,10 +179,10 @@ class Node():
         # or insert here
         else:
             spec_left = self.spec[:new_index+1-self.bounds[0]]
-            prom_left = spec_left[np.nanargmax(spec_left)]/current_thres
+            prom_left = spec_left[_nanargmax(spec_left)]/current_thres
             # print('spec_chunk left ', self.bounds[0], new_index, h.lin2z(prom_left), spec_left)
             spec_right = self.spec[new_index-self.bounds[0]:]
-            prom_right = spec_right[np.nanargmax(spec_right)]/current_thres
+            prom_right = spec_right[_nanargmax(spec_right)]/current_thres
             # print('spec_chunk right ', new_index, self.bounds[1], h.lin2z(prom_right), spec_right)
 
             cond_prom = [prom_left > self.prom_filter, prom_right > self.prom_filter]
@@ -296,7 +308,8 @@ def fix_peaks_unique(peaks, prop):
     
     """
 
-    log.warning("temporary fix for the prominence of equally high peaks")
+    # counted instead of logged per spectrum; ds_to_tree logs one summary
+    fix_peaks_unique.count += 1
     d = {}
     for e in zip(prop['left_bases'], prop['right_bases'], peaks):
         d[e[:2]] = e[2]
@@ -307,6 +320,8 @@ def fix_peaks_unique(peaks, prop):
     prop['right_bases'] = np.array([e[1] for e in lr_bounds])
 
     return peaks, prop
+
+fix_peaks_unique.count = 0
 
 
 def spectrum_to_tree(vel_step, spectrum, mask, params):
@@ -351,7 +366,9 @@ def spectrum_to_tree(vel_step, spectrum, mask, params):
         prominence=params['prom_thres'],
         width=width,
         rel_height=0.5)
-    log.debug(f'find_peaks locs {locs} props {props}')
+    # lazy %-formatting: f-strings would format the arrays for every
+    # spectrum even when the log level is not enabled
+    log.debug('find_peaks locs %s props %s', locs, props)
     
     if np.any(np.unique(h.lin2z(masked_spectrum)[locs], return_counts=True)[1] > 1):
         locs, props = fix_peaks_unique(locs, props)
@@ -361,7 +378,7 @@ def spectrum_to_tree(vel_step, spectrum, mask, params):
     if not all([e[0]<e[1] for e in bounds]):
         bounds = []
     noise_sep, internal = h.divide_bounds(bounds)
-    log.info(f"sep internal {bounds} => {noise_sep} {internal}")
+    log.info("sep internal %s => %s %s", bounds, noise_sep, internal)
 
     # the internal peaks have to be sorted by their height
     # otherwise the tree will not be build correctly
@@ -375,7 +392,11 @@ def spectrum_to_tree(vel_step, spectrum, mask, params):
             t.add_noise_sep(peak_pair[0], peak_pair[1], spectrum_min,
                             ignore_prom=True)
         for m in internal:
-            t.add_min(m, spectrum[m], ignore_prom=True)
+            # a minimum inside a masked gap would get the raw (zeroed) value
+            # as threshold -> thres=0, P=inf; use the noise-separation
+            # threshold instead, as for noise separated peaks
+            t.add_min(m, spectrum[m] if not mask[m] else spectrum_min,
+                      ignore_prom=True)
 
         traversed = coords_to_id(list(traverse(t, [0])))
     else:
@@ -441,7 +462,7 @@ def moments(bounds_l, bounds_r, thres, vel, spectrum, moms=['M0', 'M1', 'M2', 'M
         mom['M3'] = ((vel_m_M1**3 * Z_chunk_thres).sum() / (M0_thres * mom['M2']**3 ))
 
     if 'P' in moms:
-        ind_max = np.nanargmax(Z_chunk)
+        ind_max = _nanargmax(Z_chunk)
         mom['P'] = Z_chunk[ind_max] / thres
 
     return mom
@@ -483,18 +504,22 @@ def add_moments(tree, vel, a, inputvarnames, meta):
       may propagate.
     """
     
-    tree_result = copy.deepcopy(tree)
+    # shallow copy per node is sufficient: only the new 'moments' key is
+    # added, the existing values are not modified (deepcopy was a hot spot)
+    tree_result = {i: dict(node) for i, node in tree.items()}
+    if not tree_result:
+        return tree_result
+    inputvarnames = list(inputvarnames)
+    spectra = {k: a[inputvarnames.index(k),:] for k in meta}
     for i, node in tree.items():
         tree_result[i]['moments'] = {}
         for k, var in meta.items():
-            j_in_array = np.argwhere(inputvarnames == k)[0][0]
-            #print(k, var, j_in_array, a.shape)
             tree_result[i]['moments'][k] = moments(
                 node['bounds_left'],
                 node['bounds_right'],
                 node['thres'],
                 vel,
-                a[j_in_array,:],
+                spectra[k],
                 moms=var
                 )
     

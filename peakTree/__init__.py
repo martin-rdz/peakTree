@@ -384,6 +384,8 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict, time_block: int =
             vectorize=True,
         )
 
+    generate_tree.fix_peaks_unique.count = 0
+
     # process in blocks along time, so that the stacked copy of the input
     # only exists for one block at a time
     if time_block and 'time' in ds_input.dims and ds_input.sizes['time'] > time_block:
@@ -395,6 +397,13 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict, time_block: int =
     else:
         ds1 = apply_block(ds_input)
 
+    if generate_tree.fix_peaks_unique.count:
+        log.warning(
+            "temporary fix for the prominence of equally high peaks applied "
+            "to %d of %d spectra",
+            generate_tree.fix_peaks_unique.count,
+            int(np.prod([s for d, s in ds1.sizes.items() if d not in ('var', 'node')])))
+
     ds1.coords['var'] = var_names
     ds_rect = ds1.to_dataset(dim='var')
     ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node').astype('int32')
@@ -404,13 +413,13 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict, time_block: int =
     node_ids = ds_rect.coords['node'].values.astype('int32')
     ds_rect['id_child_left'] = ('node', 2*node_ids + 1)
     ds_rect['id_child_right'] = ('node', 2*node_ids + 2)
-    ds_rect['has_children'] = xr.apply_ufunc(
-        h.has_children,
-        ds_rect.id_parent,
-        input_core_dims=[['node']],
-        output_core_dims=[['node']],
-        vectorize=True,
-    )
+    # node i has children if any node of the same spectrum has id_parent == i
+    # (vectorized over all spectra instead of np.vectorize(h.has_children))
+    id_parent = ds_rect['id_parent']
+    node_ax = id_parent.get_axis_num('node')
+    p = np.moveaxis(id_parent.values, node_ax, -1)
+    has_ch = (p[..., np.newaxis, :] == np.arange(p.shape[-1])[:, np.newaxis]).any(axis=-1)
+    ds_rect['has_children'] = id_parent.copy(data=np.moveaxis(has_ch, -1, node_ax))
     ds_rect['is_leaf'] = xr.where(
         (ds_rect.id_parent != -999) & ~ds_rect.has_children, True, False)
     return ds_rect
