@@ -161,7 +161,9 @@ def load_znc(filename, pre_chunk=None):
     """
 
 
-    ds = xr.open_dataset(filename, chunks={'time': 600, 'range': 496, 'doppler': -1})
+    # small time chunks: one chunk of (time, range, doppler) float32 is
+    # ~1 MB per time step, and each dask thread holds several temporaries
+    ds = xr.open_dataset(filename, chunks={'time': 100, 'range': -1, 'doppler': -1})
     #ds = xr.open_dataset(filename)
     print(ds.chunks)
     ds['time'] = (ds['time']*1e6 + ds['microsec']).astype('datetime64[us]')
@@ -171,7 +173,7 @@ def load_znc(filename, pre_chunk=None):
         n = ds.sizes["time"]
         i, p = pre_chunk
         ds = ds.isel(time=slice(i * n // p, (i + 1) * n // p))
-        #print(n, i * n // p, (i + 1) * n // p)
+        print('time slicing', n, i * n // p, (i + 1) * n // p)
         #print(n, ((i+1) * n // p) - (i * n // p))
 
     Z = ds['SPCco'] / ds['npw1'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCo']
@@ -192,7 +194,7 @@ def load_znc(filename, pre_chunk=None):
     Z['doppler'] = Z['doppler']*-1
     Zcx['doppler'] = Zcx['doppler']*-1
 
-    print(f"ds {ds.nbytes / 2**20:.2f} MiB")
+    print(f"ds after chunk {ds.nbytes / 2**20:.2f} MiB")
     ds.close()
     del ds
     gc.collect()
@@ -301,7 +303,7 @@ def to_tree(data: Union[xr.Dataset, xr.DataTree], params: dict, meta: dict):
     return map_over_dataset_nested_args(data, ds_to_tree, params, meta)
 
 
-def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
+def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict, time_block: int = 100):
     """Convert an xarray dataset of spectra into a peakTree dataset.
 
     Parameters
@@ -315,6 +317,11 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
     meta : dict
         Mapping from variable names to the moment names used when computing
         moments.
+    time_block : int, optional
+        Number of time steps processed at once (default 100). Limits the
+        size of the temporary stacked input array. If ``ds_input`` is lazy
+        (dask-backed, e.g. from ``load_znc(filename)``), only one block is
+        loaded into memory at a time. ``None`` disables blocking.
 
     Returns
     -------
@@ -348,26 +355,47 @@ def ds_to_tree(ds_input: xr.Dataset, params: dict, meta: dict):
 
     """
 
-    ds_input_array = ds_input.to_array(dim="inputvar")
+    var_peak = 'Z'
+    # only stack the variables that are actually used, i.e. not the
+    # (broadcasted) noise fields or the noise_mask
+    inputvars = list(dict.fromkeys([var_peak, *meta.keys()]))
     vel_step = (ds_input['doppler'][1] - ds_input['doppler'][0]).values
+    var_names = generate_tree.output_variable_names(meta)
 
-    ds1, ds2 = xr.apply_ufunc(
-        generate_tree.ufunc_wrapper,
-        ds_input_array.doppler,
-        ds_input_array.inputvar,
-        ds_input_array,
-        ds_input['noise_mask'],
-        kwargs={
-            'vel_step':vel_step, 
-            'params': params,
-            'var_peak': 'Z',
-            'meta': meta },
-        input_core_dims=[['doppler'], ['inputvar'], ['inputvar', 'doppler'], ['doppler']],
-        output_core_dims=[['var', 'node'], ['var']],
-        vectorize=True,
-    )
+    def apply_block(ds_block):
+        # for lazy (dask) input this reads/computes only the current block,
+        # so the full file never has to be in memory
+        ds_block = ds_block[inputvars + ['noise_mask']].load()
+        ds_block_array = ds_block[inputvars].to_array(dim="inputvar")
+        return xr.apply_ufunc(
+            generate_tree.ufunc_wrapper,
+            ds_block_array.doppler,
+            ds_block_array.inputvar,
+            ds_block_array,
+            ds_block['noise_mask'],
+            kwargs={
+                'vel_step':vel_step,
+                'params': params,
+                'var_peak': var_peak,
+                'meta': meta },
+            input_core_dims=[['doppler'], ['inputvar'], ['inputvar', 'doppler'], ['doppler']],
+            output_core_dims=[['var', 'node']],
+            output_dtypes=[np.float32],
+            vectorize=True,
+        )
 
-    ds1.coords['var'] = ds2.isel(range=0, time=0).values
+    # process in blocks along time, so that the stacked copy of the input
+    # only exists for one block at a time
+    if time_block and 'time' in ds_input.dims and ds_input.sizes['time'] > time_block:
+        n = ds_input.sizes['time']
+        ds1 = xr.concat(
+            [apply_block(ds_input.isel(time=slice(i, i + time_block)))
+             for i in range(0, n, time_block)],
+            dim='time')
+    else:
+        ds1 = apply_block(ds_input)
+
+    ds1.coords['var'] = var_names
     ds_rect = ds1.to_dataset(dim='var')
     ds_rect['no_nodes'] = (ds_rect['bounds_left'] != -999).sum(dim='node').astype('int32')
 

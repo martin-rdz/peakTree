@@ -618,11 +618,12 @@ def ufunc_wrapper(
 
     Returns
     -------
-    tuple of (numpy.ndarray, numpy.ndarray)
-        A fixed-size tree array and the corresponding variable names. The
-        first element contains bounds, parent identifiers, thresholds, and
-        moment values for the detected nodes; the second element lists the
-        names associated with each row.
+    numpy.ndarray
+        A fixed-size (float32) tree array containing bounds, parent
+        identifiers, thresholds, and moment values for the detected nodes.
+        The row names are given by :func:`output_variable_names`; they are
+        not returned per spectrum to avoid allocating a string array for
+        every time/range bin.
 
     See Also
     --------
@@ -646,6 +647,11 @@ def ufunc_wrapper(
     #print(tree)
 
     moment_names = [f"{pref}_{e}" for pref, m in meta.items() for e in m]
-    return tree_to_numpy_predefined_size(tree, moment_names)
+    return tree_to_numpy_predefined_size(tree, moment_names)[0]
 
-    
+
+def output_variable_names(meta):
+    """Names of the rows of the array returned by :func:`ufunc_wrapper`."""
+    moment_names = [f"{pref}_{e}" for pref, m in meta.items() for e in m]
+    return ['bounds_left', 'bounds_right', 'id_parent', 'thres'] + moment_names
+
