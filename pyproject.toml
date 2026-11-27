@@ -31,6 +31,7 @@ dependencies = [
   "toml",
   "rpgpy",
   "cmcrameri",
+  "bottleneck",
 ]
 
 readme = "README.md"

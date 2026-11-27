@@ -66,6 +66,58 @@ def roll_velocity_dataset(ds, config):
     ds_rolled.coords['doppler'] = ds.coords['doppler'] - bin_roll_velocity*vel_step
 
     return ds_rolled
+
+
+def smooth_doppler(Z, noise, window=5, kernel='gauss', domain='log', fill=1.0,
+                   polyorder=2, sigma=None):
+    """smooth noise-subtracted spectra along the velocity dimension (``doppler``)
+
+    With ``domain='log'``, ``log(Z + fill*noise)`` is smoothed and ``fill*noise``
+    is subtracted afterwards (i.e. smoothing in dB realm). 
+
+    A bit experimentally
+    - ``fill=1`` reconstructs the noise-floor-clipped raw spectrum, i.e.
+      smoothing is done on the spectrum in dB including noise
+    - ``fill<1``: steeper edges, stronger suppression of isolated noise spikes
+    - ``fill>>1``: converges to linear smoothing
+
+    Boundaries are periodic (``mode='wrap'``), i.e. correct for folded spectra.
+
+    Parameters
+    ----------
+    Z : xr.DataArray
+        spectral reflectivity with dimension ``doppler`` (numpy or dask backed,
+        ``doppler`` has to be a single chunk), noise subtracted, gaps set to 0
+    noise : xr.DataArray
+        noise level per bin, without the ``doppler`` dimension
+    window : int, optional
+        kernel length in bins, odd
+    kernel : str, optional
+        ``'box'``, ``'triangle'``, ``'gauss'`` or ``'savgol'``
+    domain : str, optional
+        ``'log'`` (default) or ``'lin'``
+    fill : float, optional
+        fraction of the noise floor used to fill the gaps (only ``'log'``)
+    polyorder : int, optional
+        polynomial order for ``kernel='savgol'``
+    sigma : float, optional
+        standard deviation in bins for ``kernel='gauss'``, default ``window/4``
+
+    Returns
+    -------
+    xr.DataArray
+        smoothed Z, values < 1e-8 set to 0
+    """
+    w = h.doppler_kernel(window, kernel, polyorder, sigma)
+    return xr.apply_ufunc(
+        h.smooth_doppler_np, Z, noise,
+        input_core_dims=[['doppler'], []],
+        output_core_dims=[['doppler']],
+        kwargs=dict(weights=w, domain=domain, fill=fill),
+        dask='parallelized',
+        output_dtypes=[Z.dtype],
+        keep_attrs=True,
+    )
     
 
 

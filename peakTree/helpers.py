@@ -229,6 +229,82 @@ def blur_mask(msk, width, axis=-1):
     return msk_wide > 0.8
 
 
+def doppler_kernel(window=5, kernel='gauss', polyorder=2, sigma=None):
+    """normalised 1d smoothing weights for :func:`smooth_doppler_np`
+
+    Parameters
+    ----------
+    window : int, optional
+        kernel length in bins, has to be odd
+    kernel : str, optional
+        ``'box'``, ``'triangle'``, ``'gauss'`` or ``'savgol'``
+    polyorder : int, optional
+        polynomial order for ``kernel='savgol'``, smaller than window
+    sigma : float, optional
+        standard deviation in bins for ``kernel='gauss'``, default ``window/4``
+
+    Returns
+    -------
+    np.ndarray
+        weights of length ``window``, summing up to 1
+    """
+    if window % 2 == 0:
+        raise ValueError(f'window must be odd, got {window}')
+    h = window // 2
+    x = np.arange(-h, h + 1, dtype=float)
+    if kernel == 'box':
+        w = np.ones(window)
+    elif kernel == 'triangle':
+        w = h + 1 - np.abs(x)
+    elif kernel == 'gauss':
+        sigma = window / 4 if sigma is None else sigma
+        w = np.exp(-0.5 * (x / sigma)**2)
+    elif kernel == 'savgol':
+        w = scipy.signal.savgol_coeffs(window, polyorder)
+    else:
+        raise ValueError(f'unknown kernel {kernel}')
+    return w / w.sum()
+
+
+def smooth_doppler_np(Z, noise, weights, domain='log', fill=1.0):
+    """smooth noise-subtracted spectra along the last axis (numpy core of
+    :func:`peakTree.smooth_doppler`)
+
+    Parameters
+    ----------
+    Z : np.ndarray
+        spectral reflectivity (..., doppler), noise subtracted, gaps set to 0
+    noise : np.ndarray
+        noise level per bin (...), same units as Z
+    weights : np.ndarray
+        smoothing kernel, e.g. from :func:`doppler_kernel`
+    domain : str, optional
+        ``'log'`` (default) or ``'lin'``
+    fill : float, optional
+        fraction of the noise floor that is added before taking the log
+
+    Returns
+    -------
+    np.ndarray
+        smoothed Z, values < 1e-8 set to 0
+    """
+    Z = np.asarray(Z)
+    w = np.asarray(weights).astype(Z.dtype)
+    if domain == 'lin':
+        out = scipy.ndimage.correlate1d(Z, w, axis=-1, mode='wrap')
+    elif domain == 'log':
+        # fill the gaps with (a fraction of) the noise floor -> log finite everywhere
+        off = (fill * np.asarray(noise, dtype=Z.dtype))[..., None]
+        out = np.log(Z + off)
+        scipy.ndimage.correlate1d(out, w, axis=-1, mode='wrap', output=out)
+        np.exp(out, out=out)
+        out -= off
+    else:
+        raise ValueError(f'unknown domain {domain}')
+    out[out < 1e-8] = 0   # same convention as load_znc
+    return out
+
+
 
 def smoothing_cutting(
         specZ, noise_thres, velocity, sequence, 
