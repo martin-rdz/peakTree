@@ -154,10 +154,16 @@ def load_rpgbinary(filename):
     return datatree
 
 
-def load_znc(filename, pre_chunk=None):
+def load_znc(filename, global_attrs=False):
     """load the Metek MIRA znc spectra into a xr.Dataset
-    
-     
+
+    Parameters
+    ----------
+    filename : str or Path
+        znc file
+    global_attrs : bool, optional
+        If True, copy the global attributes of the znc file and the radar
+        parameters ``prf`` [Hz], ``nfft`` and ``nave`` into ``ds_input.attrs``.
     """
 
 
@@ -166,15 +172,12 @@ def load_znc(filename, pre_chunk=None):
     ds = xr.open_dataset(filename, chunks={'time': 100, 'range': -1, 'doppler': -1})
     #ds = xr.open_dataset(filename)
     print(ds.chunks)
+    attrs = {}
+    if global_attrs:
+        attrs = dict(ds.attrs)
+        attrs.update({v: ds[v].values.item() for v in ['prf', 'nfft', 'nave']})
     ds['time'] = (ds['time']*1e6 + ds['microsec']).astype('datetime64[us]')
     print(f"ds {ds.nbytes / 2**20:.2f} MiB")
-
-    if pre_chunk:
-        n = ds.sizes["time"]
-        i, p = pre_chunk
-        ds = ds.isel(time=slice(i * n // p, (i + 1) * n // p))
-        print('time slicing', n, i * n // p, (i + 1) * n // p)
-        #print(n, ((i+1) * n // p) - (i * n // p))
 
     Z = ds['SPCco'] / ds['npw1'] * ds['RadarConst'] * (ds['range'] / 5e3)**2 * ds['SNRCorFaCo']
     Z.attrs['long_name'] = 'Spectral reflectivity'
@@ -211,10 +214,9 @@ def load_znc(filename, pre_chunk=None):
             "Zcx": Zcx,
             "noise": noise,
             "noise_cx": noise_cx,
-        }
+        },
+        attrs=attrs,
     )
-    if pre_chunk:
-        ds_input.load()
     #print(ds_input['time'].shape)
     print(f"ds input {ds_input.nbytes / 2**20:.2f} MiB")
 
